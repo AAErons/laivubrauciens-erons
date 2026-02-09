@@ -90,7 +90,6 @@ let profileUploading = false;
 let profileMode: 'view' | 'edit' = 'view';
 let firstTaskLoading = false;
 let firstTaskChecking = false;
-let firstTaskChecked = false;
 let firstTaskError: string | null = null;
 let resultsLoading = false;
 let resultsError: string | null = null;
@@ -772,7 +771,6 @@ const render = () => {
     galleryUploadError = null;
     firstTaskLoading = false;
     firstTaskChecking = false;
-    firstTaskChecked = false;
     firstTaskError = null;
   }
   const path = getRoute();
@@ -1157,6 +1155,7 @@ function initFirstTask() {
     return;
   }
 
+  const userId = currentUser.id;
   const button = document.getElementById('first-task-button');
   if (button) {
     button.addEventListener('click', async () => {
@@ -1184,17 +1183,23 @@ function initFirstTask() {
         }
         const data = (await response.json()) as { firstTaskCompletedAt?: string | null };
         firstTaskLoading = false;
-        setCurrentUser({
-          ...currentUser,
-          firstTaskCompletedAt: data.firstTaskCompletedAt ?? optimisticCompletedAt,
-        });
+        const current = currentUser;
+        if (current && current.id === userId) {
+          setCurrentUser({
+            ...current,
+            firstTaskCompletedAt: data.firstTaskCompletedAt ?? optimisticCompletedAt,
+          });
+        }
       } catch (error) {
         firstTaskError = 'Neizdevās pabeigt uzdevumu. Lūdzu, mēģini vēlreiz.';
         firstTaskLoading = false;
-        setCurrentUser({
-          ...currentUser,
-          firstTaskCompletedAt: previousCompletedAt ?? undefined,
-        });
+        const current = currentUser;
+        if (current && current.id === userId) {
+          setCurrentUser({
+            ...current,
+            firstTaskCompletedAt: previousCompletedAt ?? undefined,
+          });
+        }
       }
     });
   }
@@ -1214,21 +1219,23 @@ function initFirstTask() {
       return (await response.json()) as { firstTaskCompletedAt?: string | null };
     })
     .then((data) => {
-      firstTaskChecked = true;
+      const current = currentUser;
+      if (!current || current.id !== userId) {
+        return;
+      }
       if (data.firstTaskCompletedAt) {
         setCurrentUser({
-          ...currentUser,
+          ...current,
           firstTaskCompletedAt: data.firstTaskCompletedAt,
         });
-      } else if (currentUser.firstTaskCompletedAt) {
+      } else if (current.firstTaskCompletedAt) {
         setCurrentUser({
-          ...currentUser,
+          ...current,
           firstTaskCompletedAt: null,
         });
       }
     })
     .catch(() => {
-      firstTaskChecked = true;
       firstTaskError = 'Neizdevās pārbaudīt uzdevumu.';
       render();
     })
