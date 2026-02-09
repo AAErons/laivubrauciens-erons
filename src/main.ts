@@ -35,9 +35,19 @@ type UserProfile = {
   pastExperience?: string;
   showProfile?: boolean;
   picture?: string;
+  firstTaskCompletedAt?: string | null;
 };
 
 type GallerySummary = Record<number, number>;
+type TaskResult = {
+  id: string;
+  name?: string;
+  firstName?: string;
+  lastName?: string;
+  nickname?: string;
+  picture?: string;
+  firstTaskCompletedAt?: string | null;
+};
 
 const GOOGLE_CLIENT_ID = '230576623376-0gdvkur7dt49lea75pq9am271r6scjdq.apps.googleusercontent.com';
 const API_BASE_URL = import.meta.env.DEV
@@ -78,6 +88,14 @@ let profileError: string | null = null;
 let profileLoading = false;
 let profileUploading = false;
 let profileMode: 'view' | 'edit' = 'view';
+let firstTaskLoading = false;
+let firstTaskChecking = false;
+let firstTaskChecked = false;
+let firstTaskError: string | null = null;
+let resultsLoading = false;
+let resultsError: string | null = null;
+let firstTaskResults: TaskResult[] = [];
+let resultsLoaded = false;
 
 const escapeHtml = (value: string) =>
   value
@@ -533,13 +551,145 @@ const pages: Record<string, string> = {
   '/profils': '',
 };
 
+const labiPage = () => `
+  <section class="flex min-h-[60vh] items-center justify-center">
+    ${
+      !currentUser
+        ? `
+          <p class="max-w-xl text-center text-base text-slate-200 sm:text-lg">
+            Reģistrējies vai ienāc profīlā, lai piedalītos konkursā!
+          </p>
+        `
+        : currentUser.firstTaskCompletedAt
+          ? `
+          <p class="max-w-xl text-center text-base text-slate-200 sm:text-lg">
+            Apsveicu, jūs esat izpildijis pirmo uzdevumu!
+          </p>
+        `
+          : `
+          <div class="flex flex-col items-center gap-4">
+            <button
+              class="rounded-full border border-white/10 bg-slate-100 px-12 py-6 text-2xl font-semibold text-slate-900 shadow-2xl transition hover:bg-white focus:outline-none focus:ring-2 focus:ring-white/50 disabled:cursor-not-allowed disabled:opacity-60"
+              id="first-task-button"
+              type="button"
+              ${firstTaskLoading ? 'disabled' : ''}
+            >
+              ${firstTaskLoading ? 'Saglabājam...' : 'Nospied mani!'}
+            </button>
+            ${
+              firstTaskError
+                ? `<p class="text-sm text-rose-300">${escapeHtml(firstTaskError)}</p>`
+                : ''
+            }
+          </div>
+        `
+    }
+  </section>
+`;
+
 const getRoute = () => {
   const hash = window.location.hash.replace('#', '');
-  if (!hash) {
-    return '/';
+  if (hash) {
+    const [pathPart] = hash.split('?');
+    return pathPart.startsWith('/') ? pathPart : `/${pathPart}`;
   }
-  const [pathPart] = hash.split('?');
-  return pathPart.startsWith('/') ? pathPart : `/${pathPart}`;
+  const path = window.location.pathname || '/';
+  return path.startsWith('/') ? path : `/${path}`;
+};
+
+const getResultsRoute = () => {
+  const hash = window.location.hash.replace('#', '');
+  const path = hash ? (hash.split('?')[0] ?? '') : '';
+  const normalized = path.startsWith('/') ? path : `/${path}`;
+  const directPath = normalized.startsWith('/rezultati') ? normalized : '/rezultati';
+  const subPath = directPath.replace('/rezultati', '').replace(/^\//, '');
+  return subPath || 'pirmais';
+};
+
+const resultsTabLabel = (tab: string) => {
+  switch (tab) {
+    case 'pirmais':
+      return 'Pirmais uzdevums';
+    case 'otrais':
+      return 'Otrais uzdevums';
+    case 'tresais':
+      return 'Trešais uzdevums';
+    case 'ceturtais':
+      return 'Ceturtais uzdevums';
+    case 'piektais':
+      return 'Piektais uzdevums';
+    default:
+      return 'Pirmais uzdevums';
+  }
+};
+
+const formatParticipantName = (user: TaskResult) => {
+  const firstName = user.firstName?.trim() ?? '';
+  const lastName = user.lastName?.trim() ?? '';
+  return `${firstName} ${lastName}`.trim() || user.name || 'Dalībnieks';
+};
+
+const resultsPage = () => {
+  const tab = getResultsRoute();
+  const tabs = ['pirmais', 'otrais', 'tresais', 'ceturtais', 'piektais'];
+  const currentLabel = resultsTabLabel(tab);
+  const isFirst = tab === 'pirmais';
+  const listContent = isFirst
+    ? resultsLoading
+      ? `<p class="text-sm text-slate-400">Ielādējam rezultātus...</p>`
+      : resultsError
+        ? `<p class="text-sm text-rose-300">${escapeHtml(resultsError)}</p>`
+        : firstTaskResults.length
+          ? `<ol class="space-y-2">
+              ${firstTaskResults
+                .map((user, index) => {
+                  const displayName = escapeHtml(formatParticipantName(user));
+                  return `
+                <li class="flex items-center gap-3 rounded-2xl border border-white/10 bg-slate-950/50 p-3">
+                  <span class="w-7 text-center text-sm text-slate-400">${index + 1}.</span>
+                  <span class="text-sm text-slate-100">${displayName}</span>
+                </li>
+              `;
+                })
+                .join('')}
+            </ol>`
+          : `<p class="text-sm text-slate-400">Pagaidām nav rezultātu.</p>`
+    : `<p class="text-sm text-slate-400">Rezultāti tiks papildināti drīzumā.</p>`;
+
+  return `
+    <section class="rounded-3xl border border-white/5 bg-white/5 p-8">
+      <div class="flex flex-col gap-6">
+        <div class="flex flex-wrap items-center justify-between gap-4">
+          <h2 class="text-lg font-light uppercase tracking-[0.35em] text-slate-300">
+            Rezultāti
+          </h2>
+          <span class="text-xs uppercase tracking-[0.3em] text-slate-500">${currentLabel}</span>
+        </div>
+        <nav class="flex flex-wrap gap-2 text-xs sm:text-sm">
+          ${tabs
+            .map((item) => {
+              const isActive = item === tab;
+              return `
+                <a
+                  class="rounded-t-2xl border border-b-0 px-3 py-2 transition ${
+                    isActive
+                      ? 'border-white/30 bg-slate-900/80 text-white shadow-[0_-1px_0_0_rgba(255,255,255,0.12)_inset]'
+                      : 'border-white/10 bg-slate-950/30 text-slate-300 hover:border-white/30 hover:bg-slate-900/40'
+                  }"
+                  href="#/rezultati/${item}"
+                >
+                  ${resultsTabLabel(item)}
+                </a>
+              `;
+            })
+            .join('')}
+        </nav>
+        <div class="rounded-2xl border border-white/10 bg-slate-950/40 p-6">
+          ${listContent}
+        </div>
+      </div>
+    </section>
+  `;
 };
 
 const handleHashChange = () => {
@@ -620,6 +770,10 @@ const render = () => {
     galleryUploadOpen = false;
     galleryUploadYear = null;
     galleryUploadError = null;
+    firstTaskLoading = false;
+    firstTaskChecking = false;
+    firstTaskChecked = false;
+    firstTaskError = null;
   }
   const path = getRoute();
   const resolvedPath = !currentUser && path === '/profils' ? '/autentifikacija' : path;
@@ -632,7 +786,11 @@ const render = () => {
           ? participantsPage()
           : resolvedPath === '/galerija'
             ? galleryPage()
-            : pages[resolvedPath] ?? pages['/'];
+            : resolvedPath.startsWith('/rezultati')
+              ? resultsPage()
+              : resolvedPath === '/labi'
+                ? labiPage()
+                : pages[resolvedPath] ?? pages['/'];
   const app = document.querySelector<HTMLDivElement>('#app');
   const profileLabel = currentUser ? 'Mans profils' : 'Ienākt profilā';
   const profileHref = currentUser ? '#/profils' : '#/autentifikacija';
@@ -655,6 +813,7 @@ const render = () => {
             <a class="transition hover:text-slate-50" href="#/dalibnieki">Dalībnieki</a>
             <a class="transition hover:text-slate-50" href="#/galerija">Galerija</a>
             <a class="transition hover:text-slate-50" href="#/apraksts">Apraksts</a>
+            <a class="transition hover:text-slate-50" href="#/rezultati/pirmais">Rezultāti</a>
             <a
               class="rounded-full border border-slate-700/70 px-3 py-1.5 text-slate-100 transition hover:border-slate-500"
               href="${profileHref}"
@@ -709,6 +868,11 @@ const render = () => {
     window.clearInterval(experienceInterval);
     experienceInterval = null;
   }
+  if (!resolvedPath.startsWith('/rezultati') && (resultsLoaded || resultsLoading)) {
+    resultsLoaded = false;
+    resultsLoading = false;
+    resultsError = null;
+  }
   const modalClosers = document.querySelectorAll<HTMLElement>('[data-modal-close]');
   modalClosers.forEach((closer) => {
     closer.addEventListener('click', () => {
@@ -721,6 +885,12 @@ const render = () => {
   }
   if (resolvedPath === '/galerija') {
     initGallery();
+  }
+  if (resolvedPath.startsWith('/rezultati')) {
+    initResults();
+  }
+  if (resolvedPath === '/labi') {
+    initFirstTask();
   }
 
   const logoutButton = document.getElementById('logout-button');
@@ -980,6 +1150,124 @@ function initProfileForm() {
       render();
     }
   });
+}
+
+function initFirstTask() {
+  if (!currentUser) {
+    return;
+  }
+
+  const button = document.getElementById('first-task-button');
+  if (button) {
+    button.addEventListener('click', async () => {
+      if (!currentUser || firstTaskLoading) {
+        return;
+      }
+      const previousCompletedAt = currentUser.firstTaskCompletedAt ?? null;
+      const optimisticCompletedAt = new Date().toISOString();
+      firstTaskLoading = true;
+      firstTaskError = null;
+      setCurrentUser({
+        ...currentUser,
+        firstTaskCompletedAt: optimisticCompletedAt,
+      });
+      try {
+        const response = await fetch(`${API_BASE_URL}/users/first-task`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({ userId: currentUser.id }),
+        });
+        if (!response.ok) {
+          throw new Error('First task failed');
+        }
+        const data = (await response.json()) as { firstTaskCompletedAt?: string | null };
+        firstTaskLoading = false;
+        setCurrentUser({
+          ...currentUser,
+          firstTaskCompletedAt: data.firstTaskCompletedAt ?? optimisticCompletedAt,
+        });
+      } catch (error) {
+        firstTaskError = 'Neizdevās pabeigt uzdevumu. Lūdzu, mēģini vēlreiz.';
+        firstTaskLoading = false;
+        setCurrentUser({
+          ...currentUser,
+          firstTaskCompletedAt: previousCompletedAt ?? undefined,
+        });
+      }
+    });
+  }
+
+  if (firstTaskChecking) {
+    return;
+  }
+
+  firstTaskChecking = true;
+  fetch(`${API_BASE_URL}/users/first-task?userId=${encodeURIComponent(currentUser.id)}`, {
+    cache: 'no-store',
+  })
+    .then(async (response) => {
+      if (!response.ok) {
+        throw new Error('Failed to load task status');
+      }
+      return (await response.json()) as { firstTaskCompletedAt?: string | null };
+    })
+    .then((data) => {
+      firstTaskChecked = true;
+      if (data.firstTaskCompletedAt) {
+        setCurrentUser({
+          ...currentUser,
+          firstTaskCompletedAt: data.firstTaskCompletedAt,
+        });
+      } else if (currentUser.firstTaskCompletedAt) {
+        setCurrentUser({
+          ...currentUser,
+          firstTaskCompletedAt: null,
+        });
+      }
+    })
+    .catch(() => {
+      firstTaskChecked = true;
+      firstTaskError = 'Neizdevās pārbaudīt uzdevumu.';
+      render();
+    })
+    .finally(() => {
+      firstTaskChecking = false;
+    });
+}
+
+function initResults() {
+  const tab = getResultsRoute();
+  if (tab !== 'pirmais') {
+    return;
+  }
+  if (resultsLoading || resultsLoaded) {
+    return;
+  }
+  resultsLoading = true;
+  resultsError = null;
+  firstTaskResults = [];
+  render();
+  fetch(`${API_BASE_URL}/users/first-task-results`, { cache: 'no-store' })
+    .then(async (response) => {
+      if (!response.ok) {
+        throw new Error('Failed to load results');
+      }
+      return (await response.json()) as { users: TaskResult[] };
+    })
+    .then((data) => {
+      firstTaskResults = data.users ?? [];
+      resultsLoading = false;
+      resultsLoaded = true;
+      render();
+    })
+    .catch(() => {
+      resultsLoading = false;
+      resultsError = 'Neizdevās ielādēt rezultātus.';
+      resultsLoaded = true;
+      render();
+    });
 }
 
 type PublicParticipant = {
