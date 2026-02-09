@@ -1,0 +1,12 @@
+{
+  "functions": {
+    "api/[[...path]].js": {
+      "includeFiles": "server/dist/**"
+    }
+  },
+  "rewrites": [
+    { "source": "/auth/:path*", "destination": "/api/auth/:path*" },
+    { "source": "/users/:path*", "destination": "/api/users/:path*" },
+    { "source": "/photos/:path*", "destination": "/api/photos/:path*" }
+  ]
+}

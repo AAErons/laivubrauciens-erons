@@ -1,0 +1,173 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  * {
+    @apply antialiased;
+  }
+
+  body {
+    @apply m-0 min-h-screen bg-slate-950 text-slate-100;
+    font-feature-settings: "ss01", "ss02", "ss03";
+  }
+}
+
+@layer components {
+  .participants-field {
+    @apply relative min-h-[70vh] overflow-hidden;
+  }
+
+  .participant-bubble {
+    @apply absolute flex flex-col items-center gap-3 text-center will-change-transform;
+  }
+
+  .participant-bubble:hover {
+    transform: scale(1.06);
+    cursor: pointer;
+  }
+
+  .participant-bubble:hover img,
+  .participant-bubble:hover .participant-fallback {
+    box-shadow: 0 0 0 3px var(--ring-color, rgba(255, 255, 255, 0.3));
+  }
+
+  .participant-bubble .bubble-circle {
+    @apply relative h-24 w-24;
+  }
+
+  .participant-bubble img,
+  .participant-bubble .participant-fallback {
+    @apply h-24 w-24 rounded-full border border-white/10 object-cover;
+    box-shadow: 0 0 0 2px var(--ring-color, rgba(255, 255, 255, 0.15));
+  }
+
+  .participant-bubble .participant-fallback {
+    @apply flex items-center justify-center text-xs uppercase tracking-[0.2em] text-slate-500;
+  }
+  .participant-modal {
+    @apply fixed inset-0 z-50 flex items-center justify-center;
+  }
+
+  .participant-modal__backdrop {
+    @apply absolute inset-0 bg-slate-950/70 backdrop-blur-sm;
+    animation: fadeIn 0.2s ease-out;
+  }
+
+  .participant-modal__card {
+    @apply relative z-10 w-[90%] max-w-md rounded-3xl border border-white/10 bg-slate-950/90 p-8 text-center text-slate-100 shadow-2xl;
+    animation: popIn 0.25s ease-out;
+    box-shadow: 0 25px 60px rgba(15, 23, 42, 0.6), 0 0 0 2px var(--ring-color, rgba(255, 255, 255, 0.12));
+  }
+
+  .gallery-modal__card {
+    @apply relative z-10 w-[88vw] max-w-none rounded-3xl border border-white/10 bg-slate-950/90 p-6 text-slate-100 shadow-2xl;
+    animation: popIn 0.25s ease-out;
+    box-shadow: 0 25px 60px rgba(15, 23, 42, 0.6);
+  }
+
+  .participant-modal__close {
+    @apply absolute right-4 top-4 h-9 w-9 rounded-full border border-white/10 text-lg text-slate-200 transition hover:border-white/30 hover:text-white;
+  }
+
+  .participant-modal__avatar {
+    @apply mx-auto mb-6 flex h-32 w-32 items-center justify-center rounded-full border border-white/10;
+    box-shadow: 0 0 0 3px var(--ring-color, rgba(255, 255, 255, 0.15));
+  }
+
+  .participant-modal__avatar img {
+    @apply h-full w-full rounded-full object-cover;
+  }
+
+  .participant-modal__name {
+    @apply text-lg uppercase tracking-[0.35em];
+  }
+
+  .participant-modal__meta {
+    @apply mt-4 flex flex-col gap-2 text-xs uppercase tracking-[0.25em] text-slate-400;
+  }
+
+  .participant-badge {
+    @apply mt-4 inline-flex items-center justify-center rounded-full px-4 py-1.5 text-xs uppercase tracking-[0.35em];
+  }
+
+  .participant-badge--1 {
+    @apply border border-white/10 text-slate-300;
+    background: rgba(148, 163, 184, 0.15);
+  }
+
+  .participant-badge--2 {
+    @apply border border-white/20 text-slate-100;
+    background: rgba(56, 189, 248, 0.2);
+  }
+
+  .participant-badge--3 {
+    @apply border border-white/30 text-white;
+    background: linear-gradient(135deg, rgba(94, 234, 212, 0.25), rgba(56, 189, 248, 0.25));
+  }
+
+  .participant-badge--4 {
+    @apply border border-white/40 text-white;
+    background: linear-gradient(135deg, rgba(251, 191, 36, 0.25), rgba(244, 63, 94, 0.25));
+  }
+
+  .participant-badge--5 {
+    @apply border border-white/50 text-white;
+    background: linear-gradient(135deg, rgba(168, 85, 247, 0.3), rgba(59, 130, 246, 0.3));
+  }
+
+  .participant-badge--new {
+    @apply border border-white/10 text-slate-300;
+    background: rgba(15, 23, 42, 0.5);
+  }
+
+  .experience-fade-in {
+    animation: experienceFadeIn 0.4s ease-out;
+  }
+
+  .experience-fade-out {
+    animation: experienceFadeOut 0.25s ease-in;
+  }
+}
+
+@keyframes popIn {
+  from {
+    transform: translateY(16px) scale(0.96);
+    opacity: 0;
+  }
+  to {
+    transform: translateY(0) scale(1);
+    opacity: 1;
+  }
+}
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes experienceFadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes experienceFadeOut {
+  from {
+    opacity: 1;
+    transform: translateY(0);
+  }
+  to {
+    opacity: 0;
+    transform: translateY(-6px);
+  }
+}
