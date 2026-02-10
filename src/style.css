@@ -128,6 +128,45 @@
   .experience-fade-out {
     animation: experienceFadeOut 0.25s ease-in;
   }
+
+  .game-grid {
+    touch-action: none;
+  }
+
+  .game-tile {
+    @apply flex aspect-square items-center justify-center rounded-2xl border border-white/10 bg-slate-900/70 text-2xl transition;
+    --drag-x: 0px;
+    --drag-y: 0px;
+    --drag-scale: 1;
+    transform: translate(var(--drag-x), var(--drag-y)) scale(var(--drag-scale));
+    transition: transform 0.08s ease, box-shadow 0.12s ease, background-color 0.12s ease,
+      border-color 0.12s ease;
+  }
+
+  .game-tile:hover {
+    @apply border-white/30;
+    transform: translateY(-1px);
+  }
+
+  .game-tile--dragging {
+    @apply border-white/40 bg-slate-800/80;
+    box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.25);
+    --drag-scale: 1.06;
+  }
+
+  .game-tile--target {
+    @apply border-white/30 bg-slate-900/90;
+    --drag-scale: 1.03;
+  }
+
+  .game-tile--clearing {
+    opacity: 0;
+    --drag-scale: 0.4;
+  }
+
+  .game-tile--fall {
+    animation: dropIn 0.32s ease;
+  }
 }
 
 @keyframes popIn {
@@ -169,5 +208,14 @@
   to {
     opacity: 0;
     transform: translateY(-6px);
+  }
+}
+
+@keyframes dropIn {
+  from {
+    transform: translate(var(--drag-x), calc(var(--drag-y) - 18px)) scale(var(--drag-scale));
+  }
+  to {
+    transform: translate(var(--drag-x), var(--drag-y)) scale(var(--drag-scale));
   }
 }

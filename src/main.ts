@@ -18,6 +18,8 @@ declare global {
     galleryPrev?: () => void;
     galleryNext?: () => void;
     gallerySetIndex?: (index: number) => void;
+    startGame?: () => void;
+    restartGame?: () => void;
   }
 }
 
@@ -36,6 +38,7 @@ type UserProfile = {
   showProfile?: boolean;
   picture?: string;
   firstTaskCompletedAt?: string | null;
+  highScore?: number;
 };
 
 type GallerySummary = Record<number, number>;
@@ -47,6 +50,7 @@ type TaskResult = {
   nickname?: string;
   picture?: string;
   firstTaskCompletedAt?: string | null;
+  highScore?: number;
 };
 
 const GOOGLE_CLIENT_ID = '230576623376-0gdvkur7dt49lea75pq9am271r6scjdq.apps.googleusercontent.com';
@@ -66,6 +70,16 @@ const loadUser = (): UserProfile | null => {
   }
 };
 
+const loadAuthToken = () => localStorage.getItem('boat_trip_token');
+
+const saveAuthToken = (token: string | null) => {
+  if (token) {
+    localStorage.setItem('boat_trip_token', token);
+  } else {
+    localStorage.removeItem('boat_trip_token');
+  }
+};
+
 const saveUser = (user: UserProfile | null) => {
   if (user) {
     localStorage.setItem('boat_trip_user', JSON.stringify(user));
@@ -77,10 +91,15 @@ const saveUser = (user: UserProfile | null) => {
 const setCurrentUser = (user: UserProfile | null) => {
   currentUser = user;
   saveUser(user);
+  if (!user) {
+    authToken = null;
+    saveAuthToken(null);
+  }
   render();
 };
 
 let currentUser = loadUser();
+let authToken = loadAuthToken();
 let authError: string | null = null;
 let authLoading = false;
 let authMode: 'login' | 'register' = 'login';
@@ -95,6 +114,42 @@ let resultsLoading = false;
 let resultsError: string | null = null;
 let firstTaskResults: TaskResult[] = [];
 let resultsLoaded = false;
+let highScoreResults: TaskResult[] = [];
+let highScoreLoaded = false;
+const GAME_SIZE = 5;
+const GAME_EMOJIS = ['⛵', '☀️', '🏖️', '🍺', '😊'];
+const gameAudio = new Audio('/background.mp3');
+gameAudio.loop = true;
+const swipeAudio = new Audio('/swipe.wav');
+const explosionAudio = new Audio('/explosion.wav');
+let gameGrid: string[] = [];
+let gameDraggingIndex: number | null = null;
+let gameDragTargetIndex: number | null = null;
+let gameDragOffset = { x: 0, y: 0 };
+let gameDragAxis: 'x' | 'y' | null = null;
+let gameTileSize = 0;
+let gameDragStart = { x: 0, y: 0 };
+let gameDragOrigin = { row: 0, col: 0 };
+let gameClearingIndices = new Set<number>();
+let gameAnimating = false;
+let gameFalling = false;
+let gameAudioStarted = false;
+let gameAudioMuted = false;
+let gameAudioVolume = 0.35;
+let gameFallingIndices = new Set<number>();
+let gameRefreshCooldown = 10;
+let gameRefreshTimerId: number | null = null;
+let gameTimeLeft = 60;
+let gameTimerId: number | null = null;
+let gameScore = 0;
+let gameStarted = false;
+let gameHighScore: number | null = null;
+let gameHighScoreUpdated: boolean | null = null;
+let gameHighScoreLoading = false;
+let gameHighScoreError: string | null = null;
+let gameEndSubmitted = false;
+let gamePointerUpBound = false;
+let gameStartBound = false;
 
 const escapeHtml = (value: string) =>
   value
@@ -544,6 +599,7 @@ const pages: Record<string, string> = {
       </div>
     </section>
   `,
+  '/spele': '',
   '/dalibnieki': '',
   '/galerija': '',
   '/autentifikacija': '',
@@ -628,32 +684,218 @@ const formatParticipantName = (user: TaskResult) => {
   return `${firstName} ${lastName}`.trim() || user.name || 'Dalībnieks';
 };
 
+const spelePage = () => `
+  <section class="rounded-3xl border border-white/5 bg-white/5 p-8">
+    <div class="flex flex-col gap-6">
+      <div class="flex flex-wrap items-center justify-center gap-6 text-sm uppercase tracking-[0.3em] text-slate-300">
+          <div class="flex items-center gap-2">
+            <span class="text-slate-500">Laiks</span>
+            <span class="rounded-full border border-white/10 px-3 py-1.5 text-lg text-slate-100">
+              ${String(Math.floor(gameTimeLeft / 60)).padStart(2, '0')}:${String(
+                gameTimeLeft % 60,
+              ).padStart(2, '0')}
+            </span>
+          </div>
+          <div class="flex items-center gap-2">
+            <span class="text-slate-500">Punkti</span>
+            <span class="rounded-full border border-white/10 px-3 py-1.5 text-lg text-slate-100">
+              ${gameScore}
+            </span>
+          </div>
+      </div>
+      ${
+        !currentUser
+          ? `
+        <div class="rounded-3xl border border-white/10 bg-slate-950/40 p-10 text-center">
+          <p class="text-sm uppercase tracking-[0.25em] text-slate-300">
+            Ienāciet profilā, lai spēlētu
+          </p>
+        </div>
+      `
+          : `
+      <div class="relative flex flex-wrap items-center justify-center gap-6">
+        <div class="hidden w-48 flex-col gap-3 rounded-2xl border border-white/10 bg-slate-950/40 p-4 text-xs uppercase tracking-[0.25em] text-slate-300 md:flex">
+          <span class="text-slate-500">Punkti</span>
+          <div class="flex items-center justify-between">
+            <span class="flex items-center gap-2 text-lg">🍺 ×3</span>
+            <span>10</span>
+          </div>
+          <div class="flex items-center justify-between">
+            <span class="flex items-center gap-2 text-lg">🍺 ×4</span>
+            <span>20</span>
+          </div>
+          <div class="flex items-center justify-between">
+            <span class="flex items-center gap-2 text-lg">🍺 ×5</span>
+            <span>50</span>
+          </div>
+        </div>
+        <div
+          class="game-grid grid w-full max-w-md grid-cols-5 gap-2 rounded-3xl border border-white/10 bg-slate-950/40 p-4"
+          id="game-grid"
+        >
+          ${gameGrid
+            .map((emoji, index) => {
+              const isDragging = gameDraggingIndex === index;
+              const isTarget = gameDragTargetIndex === index && gameDraggingIndex !== null;
+              const dragStyle = isDragging
+                ? `style="--drag-x: ${gameDragOffset.x}px; --drag-y: ${gameDragOffset.y}px;"`
+                : '';
+              return `
+                <button
+                  class="game-tile ${isDragging ? 'game-tile--dragging' : ''} ${
+                    isTarget ? 'game-tile--target' : ''
+                  } ${gameClearingIndices.has(index) ? 'game-tile--clearing' : ''} ${
+                    gameFallingIndices.has(index) ? 'game-tile--fall' : ''
+                  }"
+                  data-game-index="${index}"
+                  type="button"
+                  aria-label="Spēles lauciņš"
+                  ${dragStyle}
+                >
+                  ${emoji}
+                </button>
+              `;
+            })
+            .join('')}
+        </div>
+        ${
+          !gameStarted || gameTimeLeft <= 0
+            ? `
+          <div class="pointer-events-none absolute inset-0 z-10 flex items-center justify-center rounded-3xl bg-slate-950/70 backdrop-blur-sm">
+            ${
+              gameTimeLeft <= 0
+                ? `
+              <div class="flex flex-col items-center gap-3 text-center">
+                <p class="text-xs uppercase tracking-[0.3em] text-slate-400">Spēle beigusies</p>
+                <p class="text-2xl font-semibold text-slate-100">${gameScore} punkti</p>
+                ${
+                  gameHighScoreLoading
+                    ? `<p class="text-xs uppercase tracking-[0.25em] text-slate-500">Saglabājam...</p>`
+                    : gameHighScoreError
+                      ? `<p class="text-xs uppercase tracking-[0.25em] text-rose-300">${escapeHtml(
+                          gameHighScoreError,
+                        )}</p>`
+                      : gameHighScore !== null
+                        ? gameHighScoreUpdated
+                          ? `<p class="text-xs uppercase tracking-[0.25em] text-slate-300">Personiskais rekords: ${gameHighScore}</p>`
+                          : `<div class="flex flex-col gap-1 text-xs uppercase tracking-[0.25em] text-slate-300">
+                              <span>Rezultāts: ${gameScore}</span>
+                              <span>Personiskais rekords: ${gameHighScore}</span>
+                            </div>`
+                        : ''
+                }
+                <button
+                  class="pointer-events-auto rounded-full border border-white/10 bg-slate-100 px-6 py-3 text-sm font-semibold uppercase tracking-[0.25em] text-slate-900 transition hover:bg-white"
+                  id="game-restart"
+                  onclick="window.restartGame && window.restartGame()"
+                  type="button"
+                >
+                  Spēlēt vēlreiz
+                </button>
+              </div>
+            `
+                : `
+              <button
+                class="pointer-events-auto rounded-full border border-white/10 bg-slate-100 px-6 py-3 text-sm font-semibold uppercase tracking-[0.25em] text-slate-900 transition hover:bg-white"
+                id="game-start"
+                onclick="window.startGame && window.startGame()"
+                type="button"
+              >
+                Sākt spēli
+              </button>
+            `
+            }
+          </div>
+        `
+            : ''
+        }
+        <button
+          class="flex h-14 w-14 items-center justify-center rounded-2xl border border-white/10 text-2xl text-slate-200 transition hover:border-white/30 disabled:cursor-not-allowed disabled:opacity-50"
+          id="game-refresh"
+          type="button"
+          aria-label="Atsvaidzināt"
+          title="Atsvaidzināt"
+          ${gameRefreshCooldown > 0 ? 'disabled' : ''}
+        >
+          ${gameRefreshCooldown > 0 ? `<span class="text-sm font-semibold">${gameRefreshCooldown}</span>` : '↻'}
+        </button>
+      </div>
+      `
+      }
+      <div class="relative z-20 mt-2 flex items-center justify-end gap-4 text-xs uppercase tracking-[0.25em] text-slate-400">
+        <label class="flex items-center gap-2">
+          <input
+            class="pointer-events-auto"
+            id="game-audio-mute"
+            type="checkbox"
+            ${gameAudioMuted ? 'checked' : ''}
+          />
+          Klusums
+        </label>
+        <label class="flex items-center gap-2">
+          Skaļums
+          <input
+            class="pointer-events-auto"
+            id="game-audio-volume"
+            type="range"
+            min="0"
+            max="1"
+            step="0.05"
+            value="${gameAudioVolume}"
+          />
+        </label>
+      </div>
+    </div>
+  </section>
+`;
+
 const resultsPage = () => {
   const tab = getResultsRoute();
   const tabs = ['pirmais', 'otrais', 'tresais', 'ceturtais', 'piektais'];
   const currentLabel = resultsTabLabel(tab);
   const isFirst = tab === 'pirmais';
-  const listContent = isFirst
-    ? resultsLoading
+  const isSecond = tab === 'otrais';
+  const listContent = resultsLoading
       ? `<p class="text-sm text-slate-400">Ielādējam rezultātus...</p>`
       : resultsError
         ? `<p class="text-sm text-rose-300">${escapeHtml(resultsError)}</p>`
-        : firstTaskResults.length
+      : isFirst
+        ? firstTaskResults.length
           ? `<ol class="space-y-2">
-              ${firstTaskResults
-                .map((user, index) => {
-                  const displayName = escapeHtml(formatParticipantName(user));
-                  return `
-                <li class="flex items-center gap-3 rounded-2xl border border-white/10 bg-slate-950/50 p-3">
-                  <span class="w-7 text-center text-sm text-slate-400">${index + 1}.</span>
-                  <span class="text-sm text-slate-100">${displayName}</span>
-                </li>
-              `;
-                })
-                .join('')}
-            </ol>`
+                ${firstTaskResults
+                  .map((user, index) => {
+                    const displayName = escapeHtml(formatParticipantName(user));
+                    return `
+                  <li class="flex items-center gap-3 rounded-2xl border border-white/10 bg-slate-950/50 p-3">
+                    <span class="w-7 text-center text-sm text-slate-400">${index + 1}.</span>
+                    <span class="text-sm text-slate-100">${displayName}</span>
+                  </li>
+                `;
+                  })
+                  .join('')}
+              </ol>`
           : `<p class="text-sm text-slate-400">Pagaidām nav rezultātu.</p>`
-    : `<p class="text-sm text-slate-400">Rezultāti tiks papildināti drīzumā.</p>`;
+        : isSecond
+          ? highScoreResults.length
+            ? `<ol class="space-y-2">
+                ${highScoreResults
+                  .map((user, index) => {
+                    const displayName = escapeHtml(formatParticipantName(user));
+                    const score = user.highScore ?? 0;
+                    return `
+                  <li class="flex items-center justify-between gap-3 rounded-2xl border border-white/10 bg-slate-950/50 p-3">
+                    <div class="flex items-center gap-3">
+                      <span class="w-7 text-center text-sm text-slate-400">${index + 1}.</span>
+                      <span class="text-sm text-slate-100">${displayName}</span>
+                    </div>
+                    <span class="text-sm text-slate-300">${score}</span>
+                  </li>
+                `;
+                  })
+                  .join('')}
+              </ol>`
+            : `<p class="text-sm text-slate-400">Pagaidām nav rezultātu.</p>`
+          : `<p class="text-sm text-slate-400">Rezultāti tiks papildināti drīzumā.</p>`;
 
   return `
     <section class="rounded-3xl border border-white/5 bg-white/5 p-8">
@@ -689,6 +931,160 @@ const resultsPage = () => {
       </div>
     </section>
   `;
+};
+
+const randomEmoji = () => GAME_EMOJIS[Math.floor(Math.random() * GAME_EMOJIS.length)];
+
+const getMatchRuns = (grid: string[]) => {
+  const matches = new Set<number>();
+  const runs: number[] = [];
+
+  for (let row = 0; row < GAME_SIZE; row += 1) {
+    let runStart = 0;
+    for (let col = 1; col <= GAME_SIZE; col += 1) {
+      const current = col < GAME_SIZE ? grid[row * GAME_SIZE + col] : '';
+      const previous = grid[row * GAME_SIZE + col - 1];
+      if (col < GAME_SIZE && current === previous && current !== '') {
+        continue;
+      }
+      const runLength = col - runStart;
+      if (runLength >= 3 && previous !== '') {
+        runs.push(runLength);
+        for (let c = runStart; c < col; c += 1) {
+          matches.add(row * GAME_SIZE + c);
+        }
+      }
+      runStart = col;
+    }
+  }
+
+  for (let col = 0; col < GAME_SIZE; col += 1) {
+    let runStart = 0;
+    for (let row = 1; row <= GAME_SIZE; row += 1) {
+      const current = row < GAME_SIZE ? grid[row * GAME_SIZE + col] : '';
+      const previous = grid[(row - 1) * GAME_SIZE + col];
+      if (row < GAME_SIZE && current === previous && current !== '') {
+        continue;
+      }
+      const runLength = row - runStart;
+      if (runLength >= 3 && previous !== '') {
+        runs.push(runLength);
+        for (let r = runStart; r < row; r += 1) {
+          matches.add(r * GAME_SIZE + col);
+        }
+      }
+      runStart = row;
+    }
+  }
+
+  return { matches, runs };
+};
+
+const collapseGrid = (grid: string[]) => {
+  const filled = new Set<number>();
+  for (let col = 0; col < GAME_SIZE; col += 1) {
+    const stack: string[] = [];
+    for (let row = GAME_SIZE - 1; row >= 0; row -= 1) {
+      const value = grid[row * GAME_SIZE + col];
+      if (value !== '') {
+        stack.push(value);
+      }
+    }
+    for (let row = GAME_SIZE - 1; row >= 0; row -= 1) {
+      grid[row * GAME_SIZE + col] = stack.shift() ?? '';
+    }
+    for (let row = 0; row < GAME_SIZE; row += 1) {
+      if (grid[row * GAME_SIZE + col] === '') {
+        grid[row * GAME_SIZE + col] = randomEmoji();
+        filled.add(row * GAME_SIZE + col);
+      }
+    }
+  }
+  return filled;
+};
+
+const resolveMatchesImmediate = () => {
+  let { matches } = getMatchRuns(gameGrid);
+  while (matches.size > 0) {
+    matches.forEach((index) => {
+      gameGrid[index] = '';
+    });
+    collapseGrid(gameGrid);
+    matches = getMatchRuns(gameGrid).matches;
+  }
+};
+
+const initGameGrid = () => {
+  gameGrid = Array.from({ length: GAME_SIZE * GAME_SIZE }, () => randomEmoji());
+  resolveMatchesImmediate();
+};
+
+const swapGridIndices = (fromIndex: number, toIndex: number) => {
+  const temp = gameGrid[fromIndex];
+  gameGrid[fromIndex] = gameGrid[toIndex];
+  gameGrid[toIndex] = temp;
+};
+
+const resolveMatchesAnimated = () => {
+  if (gameAnimating) {
+    return;
+  }
+  const { matches, runs } = getMatchRuns(gameGrid);
+  if (matches.size === 0) {
+    return;
+  }
+  gameAnimating = true;
+  gameClearingIndices = new Set(matches);
+  if (runs.length > 0) {
+    runs.forEach((length) => {
+      if (length >= 5) {
+        gameScore += 50;
+      } else if (length === 4) {
+        gameScore += 20;
+      } else if (length === 3) {
+        gameScore += 10;
+      }
+    });
+  }
+  gameRefreshCooldown = 10;
+  if (!gameRefreshTimerId) {
+    gameRefreshTimerId = window.setInterval(() => {
+      if (gameRefreshCooldown > 0) {
+        gameRefreshCooldown -= 1;
+        render();
+      }
+      if (gameRefreshCooldown <= 0 && gameRefreshTimerId) {
+        window.clearInterval(gameRefreshTimerId);
+        gameRefreshTimerId = null;
+      }
+    }, 1000);
+  }
+  explosionAudio.currentTime = 0;
+  explosionAudio.volume = 0.7;
+  explosionAudio.muted = gameAudioMuted;
+  explosionAudio.play().catch(() => {});
+  render();
+
+  window.setTimeout(() => {
+    matches.forEach((index) => {
+      gameGrid[index] = '';
+    });
+    const filled = collapseGrid(gameGrid);
+    gameClearingIndices = new Set();
+    gameFalling = true;
+    gameFallingIndices = filled;
+    render();
+
+    window.setTimeout(() => {
+      gameFalling = false;
+      gameFallingIndices = new Set();
+      render();
+      gameAnimating = false;
+      if (getMatchRuns(gameGrid).matches.size > 0) {
+        resolveMatchesAnimated();
+      }
+    }, 320);
+  }, 200);
 };
 
 const handleHashChange = () => {
@@ -737,7 +1133,11 @@ function initGoogleSignIn(attempt = 0) {
           throw new Error('Auth failed');
         }
 
-        const data = (await response.json()) as { user: UserProfile };
+        const data = (await response.json()) as { user: UserProfile; token?: string };
+        if (data.token) {
+          authToken = data.token;
+          saveAuthToken(data.token);
+        }
         setCurrentUser(data.user);
         window.location.hash = '#/profils';
         window.location.reload();
@@ -788,7 +1188,9 @@ const render = () => {
               ? resultsPage()
               : resolvedPath === '/labi'
                 ? labiPage()
-                : pages[resolvedPath] ?? pages['/'];
+                : resolvedPath === '/spele'
+                  ? spelePage()
+                  : pages[resolvedPath] ?? pages['/'];
   const app = document.querySelector<HTMLDivElement>('#app');
   const profileLabel = currentUser ? 'Mans profils' : 'Ienākt profilā';
   const profileHref = currentUser ? '#/profils' : '#/autentifikacija';
@@ -812,6 +1214,7 @@ const render = () => {
             <a class="transition hover:text-slate-50" href="#/galerija">Galerija</a>
             <a class="transition hover:text-slate-50" href="#/apraksts">Apraksts</a>
             <a class="transition hover:text-slate-50" href="#/rezultati/pirmais">Rezultāti</a>
+            <a class="transition hover:text-slate-50" href="#/spele">Spēle</a>
             <a
               class="rounded-full border border-slate-700/70 px-3 py-1.5 text-slate-100 transition hover:border-slate-500"
               href="${profileHref}"
@@ -870,6 +1273,24 @@ const render = () => {
     resultsLoaded = false;
     resultsLoading = false;
     resultsError = null;
+    highScoreLoaded = false;
+  }
+  if (resolvedPath !== '/spele') {
+    gameAudioStarted = false;
+    gameStarted = false;
+    gameHighScore = null;
+    gameHighScoreUpdated = null;
+    gameHighScoreLoading = false;
+    gameHighScoreError = null;
+    gameEndSubmitted = false;
+    if (gameRefreshTimerId) {
+      window.clearInterval(gameRefreshTimerId);
+      gameRefreshTimerId = null;
+    }
+    if (gameTimerId) {
+      window.clearInterval(gameTimerId);
+      gameTimerId = null;
+    }
   }
   const modalClosers = document.querySelectorAll<HTMLElement>('[data-modal-close]');
   modalClosers.forEach((closer) => {
@@ -889,6 +1310,13 @@ const render = () => {
   }
   if (resolvedPath === '/labi') {
     initFirstTask();
+  }
+  if (resolvedPath === '/spele') {
+    initGame();
+  }
+  if (resolvedPath !== '/spele') {
+    gameAudio.pause();
+    gameAudio.currentTime = 0;
   }
 
   const logoutButton = document.getElementById('logout-button');
@@ -946,7 +1374,11 @@ function initPasswordAuth() {
         throw new Error('Auth failed');
       }
 
-      const data = (await response.json()) as { user: UserProfile };
+      const data = (await response.json()) as { user: UserProfile; token?: string };
+      if (data.token) {
+        authToken = data.token;
+        saveAuthToken(data.token);
+      }
       setCurrentUser(data.user);
       window.location.hash = '#/profils';
       window.location.reload();
@@ -1246,35 +1678,468 @@ function initFirstTask() {
 
 function initResults() {
   const tab = getResultsRoute();
-  if (tab !== 'pirmais') {
+  if (tab === 'pirmais') {
+    if (resultsLoading || resultsLoaded) {
+      return;
+    }
+    resultsLoading = true;
+    resultsError = null;
+    firstTaskResults = [];
+    render();
+    fetch(`${API_BASE_URL}/users/first-task-results`, { cache: 'no-store' })
+      .then(async (response) => {
+        if (!response.ok) {
+          throw new Error('Failed to load results');
+        }
+        return (await response.json()) as { users: TaskResult[] };
+      })
+      .then((data) => {
+        firstTaskResults = data.users ?? [];
+        resultsLoading = false;
+        resultsLoaded = true;
+        render();
+      })
+      .catch(() => {
+        resultsLoading = false;
+        resultsError = 'Neizdevās ielādēt rezultātus.';
+        resultsLoaded = true;
+        render();
+      });
     return;
   }
-  if (resultsLoading || resultsLoaded) {
+  if (tab === 'otrais') {
+    if (resultsLoading || highScoreLoaded) {
+      return;
+    }
+    resultsLoading = true;
+    resultsError = null;
+    highScoreResults = [];
+    render();
+    fetch(`${API_BASE_URL}/users/highscore-results`, { cache: 'no-store' })
+      .then(async (response) => {
+        if (!response.ok) {
+          throw new Error('Failed to load results');
+        }
+        return (await response.json()) as { users: TaskResult[] };
+      })
+      .then((data) => {
+        highScoreResults = data.users ?? [];
+        resultsLoading = false;
+        highScoreLoaded = true;
+        render();
+      })
+      .catch(() => {
+        resultsLoading = false;
+        resultsError = 'Neizdevās ielādēt rezultātus.';
+        highScoreLoaded = true;
+        render();
+      });
+  }
+}
+
+window.startGame = () => {
+  if (gameStarted) {
     return;
   }
-  resultsLoading = true;
-  resultsError = null;
-  firstTaskResults = [];
-  render();
-  fetch(`${API_BASE_URL}/users/first-task-results`, { cache: 'no-store' })
-    .then(async (response) => {
-      if (!response.ok) {
-        throw new Error('Failed to load results');
+  gameStarted = true;
+  gameTimeLeft = 60;
+  gameScore = 0;
+  gameHighScore = null;
+  gameHighScoreUpdated = null;
+  gameHighScoreLoading = false;
+  gameHighScoreError = null;
+  gameEndSubmitted = false;
+  if (!gameTimerId) {
+    gameTimerId = window.setInterval(() => {
+      if (gameTimeLeft > 0) {
+        gameTimeLeft -= 1;
+        render();
       }
-      return (await response.json()) as { users: TaskResult[] };
-    })
-    .then((data) => {
-      firstTaskResults = data.users ?? [];
-      resultsLoading = false;
-      resultsLoaded = true;
+      if (gameTimeLeft <= 0 && gameTimerId) {
+        window.clearInterval(gameTimerId);
+        gameTimerId = null;
+            submitHighScore();
+      }
+    }, 1000);
+  }
+  if (!gameAudioStarted) {
+    gameAudio.muted = gameAudioMuted;
+    gameAudio.volume = gameAudioMuted ? 0 : gameAudioVolume;
+    gameAudio
+      .play()
+      .then(() => {
+        gameAudioStarted = true;
+      })
+      .catch(() => {
+        gameAudioStarted = false;
+      });
+  }
+  render();
+};
+
+window.restartGame = () => {
+  gameGrid = [];
+  gameClearingIndices = new Set();
+  gameDraggingIndex = null;
+  gameDragTargetIndex = null;
+  gameDragOffset = { x: 0, y: 0 };
+  gameDragAxis = null;
+  gameDragStart = { x: 0, y: 0 };
+  gameDragOrigin = { row: 0, col: 0 };
+  gameScore = 0;
+  gameTimeLeft = 60;
+  gameStarted = true;
+  gameHighScore = null;
+  gameHighScoreUpdated = null;
+  gameHighScoreLoading = false;
+  gameHighScoreError = null;
+  gameEndSubmitted = false;
+  if (gameTimerId) {
+    window.clearInterval(gameTimerId);
+    gameTimerId = null;
+  }
+  gameTimerId = window.setInterval(() => {
+    if (gameTimeLeft > 0) {
+      gameTimeLeft -= 1;
       render();
-    })
-    .catch(() => {
-      resultsLoading = false;
-      resultsError = 'Neizdevās ielādēt rezultātus.';
-      resultsLoaded = true;
+    }
+    if (gameTimeLeft <= 0 && gameTimerId) {
+      window.clearInterval(gameTimerId);
+      gameTimerId = null;
+          submitHighScore();
+    }
+  }, 1000);
+  gameRefreshCooldown = 10;
+  if (gameRefreshTimerId) {
+    window.clearInterval(gameRefreshTimerId);
+    gameRefreshTimerId = null;
+  }
+  gameRefreshTimerId = window.setInterval(() => {
+    if (gameRefreshCooldown > 0) {
+      gameRefreshCooldown -= 1;
+      render();
+    }
+    if (gameRefreshCooldown <= 0 && gameRefreshTimerId) {
+      window.clearInterval(gameRefreshTimerId);
+      gameRefreshTimerId = null;
+    }
+  }, 1000);
+  initGameGrid();
+  render();
+};
+
+const submitHighScore = async () => {
+  if (!currentUser || gameEndSubmitted) {
+    return;
+  }
+  gameHighScoreLoading = true;
+  gameHighScoreError = null;
+  gameEndSubmitted = true;
+  render();
+  try {
+    const headers: Record<string, string> = {
+      'Content-Type': 'application/json',
+    };
+    if (authToken) {
+      headers.Authorization = `Bearer ${authToken}`;
+    }
+    const response = await fetch(`${API_BASE_URL}/users/highscore`, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({ score: gameScore }),
+    });
+    if (!response.ok) {
+      throw new Error('Highscore failed');
+    }
+    const data = (await response.json()) as { highScore?: number | null; updated?: boolean };
+    gameHighScore = typeof data.highScore === 'number' ? data.highScore : null;
+    gameHighScoreUpdated = Boolean(data.updated);
+    gameHighScoreLoading = false;
+    render();
+  } catch (error) {
+    gameHighScoreLoading = false;
+    gameHighScoreError = 'Neizdevās saglabāt rezultātu.';
+    render();
+  }
+};
+
+function initGame() {
+  if (!currentUser) {
+    return;
+  }
+  if (!gameStartBound) {
+    gameStartBound = true;
+    document.addEventListener(
+      'pointerdown',
+      (event) => {
+        const target = (event.target as HTMLElement | null)?.closest('#game-start, #game-restart');
+        if (!target) {
+          return;
+        }
+        event.preventDefault();
+        event.stopPropagation();
+        if ((target as HTMLElement).id === 'game-restart') {
+          if (window.restartGame) {
+            window.restartGame();
+          }
+        } else if (!gameStarted) {
+          if (window.startGame) {
+            window.startGame();
+          }
+        }
+      },
+      true,
+    );
+  }
+
+  if (!gameTimerId && gameTimeLeft > 0 && gameStarted) {
+    gameTimerId = window.setInterval(() => {
+      if (gameTimeLeft > 0) {
+        gameTimeLeft -= 1;
+        render();
+      }
+      if (gameTimeLeft <= 0 && gameTimerId) {
+        window.clearInterval(gameTimerId);
+        gameTimerId = null;
+        submitHighScore();
+      }
+    }, 1000);
+  }
+
+  if (!gameRefreshTimerId && gameRefreshCooldown > 0) {
+    gameRefreshTimerId = window.setInterval(() => {
+      if (gameRefreshCooldown > 0) {
+        gameRefreshCooldown -= 1;
+        render();
+      }
+      if (gameRefreshCooldown <= 0 && gameRefreshTimerId) {
+        window.clearInterval(gameRefreshTimerId);
+        gameRefreshTimerId = null;
+      }
+    }, 1000);
+  }
+
+  const refreshButton = document.getElementById('game-refresh');
+  if (refreshButton) {
+    refreshButton.addEventListener('click', () => {
+      if (gameTimeLeft <= 0) {
+        return;
+      }
+      if (gameRefreshCooldown > 0) {
+        return;
+      }
+      gameGrid = [];
+      gameClearingIndices = new Set();
+      gameDraggingIndex = null;
+      gameDragTargetIndex = null;
+      gameDragOffset = { x: 0, y: 0 };
+      gameDragAxis = null;
+      gameDragStart = { x: 0, y: 0 };
+      gameDragOrigin = { row: 0, col: 0 };
+      gameRefreshCooldown = 10;
+      if (!gameRefreshTimerId) {
+        gameRefreshTimerId = window.setInterval(() => {
+          if (gameRefreshCooldown > 0) {
+            gameRefreshCooldown -= 1;
+            render();
+          }
+          if (gameRefreshCooldown <= 0 && gameRefreshTimerId) {
+            window.clearInterval(gameRefreshTimerId);
+            gameRefreshTimerId = null;
+          }
+        }, 1000);
+      }
+      initGameGrid();
       render();
     });
+  }
+
+  const muteToggle = document.getElementById('game-audio-mute') as HTMLInputElement | null;
+  const volumeSlider = document.getElementById('game-audio-volume') as HTMLInputElement | null;
+  if (muteToggle) {
+    muteToggle.addEventListener('change', () => {
+      gameAudioMuted = muteToggle.checked;
+      gameAudio.muted = gameAudioMuted;
+      swipeAudio.muted = gameAudioMuted;
+      explosionAudio.muted = gameAudioMuted;
+    });
+  }
+  if (volumeSlider) {
+    volumeSlider.addEventListener('input', () => {
+      const nextVolume = Number(volumeSlider.value);
+      if (!Number.isNaN(nextVolume)) {
+        gameAudioVolume = nextVolume;
+        if (!gameAudioMuted) {
+          gameAudio.volume = gameAudioVolume;
+        }
+      }
+    });
+  }
+
+  if (!gameAudioStarted && gameStarted) {
+    gameAudio.muted = gameAudioMuted;
+    gameAudio.volume = gameAudioMuted ? 0 : gameAudioVolume;
+    gameAudio
+      .play()
+      .then(() => {
+        gameAudioStarted = true;
+      })
+      .catch(() => {
+        gameAudioStarted = false;
+      });
+  }
+
+  if (gameGrid.length === 0) {
+    initGameGrid();
+    render();
+    return;
+  }
+
+  const grid = document.getElementById('game-grid');
+  if (!grid) {
+    return;
+  }
+
+  const firstTile = grid.querySelector<HTMLElement>('[data-game-index]');
+  if (firstTile) {
+    gameTileSize = firstTile.getBoundingClientRect().width;
+  }
+
+  if (grid.dataset.bound !== 'true') {
+    grid.dataset.bound = 'true';
+    grid.addEventListener('pointerdown', (event) => {
+      if (!gameStarted) {
+        return;
+      }
+      if (gameTimeLeft <= 0) {
+        return;
+      }
+      if (gameAnimating || gameFalling) {
+        return;
+      }
+      const target = (event.target as HTMLElement | null)?.closest('[data-game-index]');
+      if (!target) {
+        return;
+      }
+      const index = Number(target.getAttribute('data-game-index'));
+      if (Number.isNaN(index)) {
+        return;
+      }
+      const row = Math.floor(index / GAME_SIZE);
+      const col = index % GAME_SIZE;
+      gameDraggingIndex = index;
+      gameDragTargetIndex = index;
+      gameDragOffset = { x: 0, y: 0 };
+      gameDragAxis = null;
+      gameDragStart = {
+        x: (event as PointerEvent).clientX,
+        y: (event as PointerEvent).clientY,
+      };
+      gameDragOrigin = { row, col };
+      (target as HTMLElement).setPointerCapture?.((event as PointerEvent).pointerId);
+      render();
+    });
+
+    grid.addEventListener('pointermove', (event) => {
+      if (gameDraggingIndex === null) {
+        return;
+      }
+      if (!gameStarted) {
+        return;
+      }
+      if (gameTimeLeft <= 0) {
+        return;
+      }
+      if (gameAnimating || gameFalling) {
+        return;
+      }
+      const deltaX = (event as PointerEvent).clientX - gameDragStart.x;
+      const deltaY = (event as PointerEvent).clientY - gameDragStart.y;
+      if (!gameDragAxis) {
+        if (Math.max(Math.abs(deltaX), Math.abs(deltaY)) < 6) {
+          return;
+        }
+        gameDragAxis = Math.abs(deltaX) >= Math.abs(deltaY) ? 'x' : 'y';
+      }
+      const axisDelta = gameDragAxis === 'x' ? deltaX : deltaY;
+      const clamped = Math.max(Math.min(axisDelta, gameTileSize), -gameTileSize);
+      gameDragOffset =
+        gameDragAxis === 'x' ? { x: clamped, y: 0 } : { x: 0, y: clamped };
+
+      let targetIndex: number | null = null;
+      if (Math.abs(clamped) >= gameTileSize / 2) {
+        if (gameDragAxis === 'x') {
+          const nextCol = gameDragOrigin.col + (clamped > 0 ? 1 : -1);
+          if (nextCol >= 0 && nextCol < GAME_SIZE) {
+            targetIndex = gameDragOrigin.row * GAME_SIZE + nextCol;
+          }
+        } else {
+          const nextRow = gameDragOrigin.row + (clamped > 0 ? 1 : -1);
+          if (nextRow >= 0 && nextRow < GAME_SIZE) {
+            targetIndex = nextRow * GAME_SIZE + gameDragOrigin.col;
+          }
+        }
+      }
+      gameDragTargetIndex = targetIndex ?? gameDraggingIndex;
+      render();
+    });
+  }
+
+  if (!gamePointerUpBound) {
+    gamePointerUpBound = true;
+    window.addEventListener('pointerup', () => {
+      if (!gameStarted) {
+        gameDraggingIndex = null;
+        gameDragTargetIndex = null;
+        gameDragOffset = { x: 0, y: 0 };
+        gameDragAxis = null;
+        gameDragStart = { x: 0, y: 0 };
+        gameDragOrigin = { row: 0, col: 0 };
+        render();
+        return;
+      }
+      if (gameTimeLeft <= 0) {
+        gameDraggingIndex = null;
+        gameDragTargetIndex = null;
+        gameDragOffset = { x: 0, y: 0 };
+        gameDragAxis = null;
+        gameDragStart = { x: 0, y: 0 };
+        gameDragOrigin = { row: 0, col: 0 };
+        render();
+        return;
+      }
+      if (gameDraggingIndex === null || gameDragTargetIndex === null) {
+        gameDraggingIndex = null;
+        gameDragTargetIndex = null;
+        gameDragOffset = { x: 0, y: 0 };
+        gameDragAxis = null;
+        gameDragStart = { x: 0, y: 0 };
+        gameDragOrigin = { row: 0, col: 0 };
+        return;
+      }
+      const fromIndex = gameDraggingIndex;
+      const toIndex = gameDragTargetIndex;
+      gameDraggingIndex = null;
+      gameDragTargetIndex = null;
+      gameDragOffset = { x: 0, y: 0 };
+      gameDragAxis = null;
+      gameDragStart = { x: 0, y: 0 };
+      gameDragOrigin = { row: 0, col: 0 };
+      swipeAudio.currentTime = 0;
+      swipeAudio.volume = 0.6;
+      swipeAudio.muted = gameAudioMuted;
+      swipeAudio.play().catch(() => {});
+      if (fromIndex !== toIndex) {
+        swapGridIndices(fromIndex, toIndex);
+        if (getMatchRuns(gameGrid).matches.size > 0) {
+          resolveMatchesAnimated();
+        } else {
+          swapGridIndices(fromIndex, toIndex);
+        }
+      }
+      render();
+    });
+  }
 }
 
 type PublicParticipant = {
