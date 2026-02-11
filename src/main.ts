@@ -20,6 +20,7 @@ declare global {
     gallerySetIndex?: (index: number) => void;
     startGame?: () => void;
     restartGame?: () => void;
+    selectUpgrade?: (choice: UpgradeChoice) => void;
   }
 }
 
@@ -118,6 +119,15 @@ let highScoreResults: TaskResult[] = [];
 let highScoreLoaded = false;
 const GAME_SIZE = 5;
 const GAME_EMOJIS = ['⛵', '☀️', '🏖️', '🍺', '😊'];
+const UPGRADE_THRESHOLD = 20;
+const UPGRADE_POOL = ['time', 'multiplier', 'refresh', 'bomb', 'crystal'] as const;
+const UPGRADE_THRESHOLDS = [250, 750, 2000];
+const UPGRADE_LABELS: Array<Record<UpgradeChoice, string>> = [
+  { time: '+10s', multiplier: '×2', refresh: '-3s', bomb: '+5%', crystal: '+2%' },
+  { time: '+30s', multiplier: '×3', refresh: '-6s', bomb: '+15%', crystal: '+5%' },
+  { time: '+60s', multiplier: '×4', refresh: '0s', bomb: '+35%', crystal: '+20%' },
+];
+type UpgradeChoice = (typeof UPGRADE_POOL)[number];
 const gameAudio = new Audio('/background.mp3');
 gameAudio.loop = true;
 const swipeAudio = new Audio('/swipe.wav');
@@ -131,12 +141,15 @@ let gameTileSize = 0;
 let gameDragStart = { x: 0, y: 0 };
 let gameDragOrigin = { row: 0, col: 0 };
 let gameClearingIndices = new Set<number>();
+let gameBombExplosionIndices = new Set<number>();
+let gameCrystalExplosionIndices = new Set<number>();
 let gameAnimating = false;
 let gameFalling = false;
 let gameAudioStarted = false;
 let gameAudioMuted = false;
 let gameAudioVolume = 0.35;
 let gameFallingIndices = new Set<number>();
+let gameRefreshBase = 10;
 let gameRefreshCooldown = 10;
 let gameRefreshTimerId: number | null = null;
 let gameTimeLeft = 60;
@@ -148,8 +161,27 @@ let gameHighScoreUpdated: boolean | null = null;
 let gameHighScoreLoading = false;
 let gameHighScoreError: string | null = null;
 let gameEndSubmitted = false;
+let gameUpgradePending = false;
+let gameScoreMultiplier = 1;
+let gameScoreHighlight = false;
+let gameBombs = 0;
+let gameBombDragging = false;
+let gameBombDragPos = { x: 0, y: 0 };
+let gameBombTargetIndex: number | null = null;
+let gamePendingBombState: GameState | null = null;
+let gameBombDropChance = 0;
+let gameCrystalDropChance = 0;
+let gameUpgradeChoices: UpgradeChoice[] = [];
+let gameUpgradeTier = -1;
+let gameCrystals = 0;
+let gameCrystalDragging = false;
+let gameCrystalDragPos = { x: 0, y: 0 };
+let gameCrystalTargetIndex: number | null = null;
+let gameSessionLoaded = false;
+let gameNetworkBusy = false;
 let gamePointerUpBound = false;
 let gameStartBound = false;
+let gameUpgradeBound = false;
 
 const escapeHtml = (value: string) =>
   value
@@ -698,7 +730,13 @@ const spelePage = () => `
           </div>
           <div class="flex items-center gap-2">
             <span class="text-slate-500">Punkti</span>
-            <span class="rounded-full border border-white/10 px-3 py-1.5 text-lg text-slate-100">
+            <span
+              class="rounded-full border px-3 py-1.5 text-lg transition ${
+                gameScoreHighlight
+                  ? 'border-emerald-400/60 bg-emerald-400/20 text-emerald-100 shadow-[0_0_12px_rgba(16,185,129,0.45)]'
+                  : 'border-white/10 text-slate-100'
+              }"
+            >
               ${gameScore}
             </span>
           </div>
@@ -718,21 +756,39 @@ const spelePage = () => `
           <span class="text-slate-500">Punkti</span>
           <div class="flex items-center justify-between">
             <span class="flex items-center gap-2 text-lg">🍺 ×3</span>
-            <span>10</span>
+            <span class="${gameScoreMultiplier > 1 ? 'text-emerald-200' : ''}">${Math.round(10 * gameScoreMultiplier)}</span>
           </div>
           <div class="flex items-center justify-between">
             <span class="flex items-center gap-2 text-lg">🍺 ×4</span>
-            <span>20</span>
+            <span class="${gameScoreMultiplier > 1 ? 'text-emerald-200' : ''}">${Math.round(20 * gameScoreMultiplier)}</span>
           </div>
           <div class="flex items-center justify-between">
             <span class="flex items-center gap-2 text-lg">🍺 ×5</span>
-            <span>50</span>
+            <span class="${gameScoreMultiplier > 1 ? 'text-emerald-200' : ''}">${Math.round(50 * gameScoreMultiplier)}</span>
           </div>
+          ${
+            gameScoreMultiplier > 1
+              ? `<span class="mt-1 text-[10px] uppercase tracking-[0.25em] text-emerald-200">×${gameScoreMultiplier.toFixed(1)} punkti</span>`
+              : ''
+          }
         </div>
-        <div
-          class="game-grid grid w-full max-w-md grid-cols-5 gap-2 rounded-3xl border border-white/10 bg-slate-950/40 p-4"
-          id="game-grid"
-        >
+        <div class="flex w-full max-w-md flex-col gap-3">
+          <div class="rounded-2xl border border-white/10 bg-slate-950/40 px-3 py-2">
+            <div class="flex items-center justify-between text-[10px] uppercase tracking-[0.2em] text-slate-400">
+              <span>${getUpgradeProgress().segmentStart}</span>
+              <span>${getUpgradeProgress().segmentEnd}</span>
+            </div>
+            <div class="mt-2 h-2 w-full rounded-full bg-slate-900/60">
+              <div
+                class="h-2 rounded-full bg-emerald-300/70 transition-[width] duration-200"
+                style="width: ${getUpgradeProgress().percent}%;"
+              ></div>
+            </div>
+          </div>
+          <div
+            class="game-grid grid w-full grid-cols-5 gap-2 rounded-3xl border border-white/10 bg-slate-950/40 p-4"
+            id="game-grid"
+          >
           ${gameGrid
             .map((emoji, index) => {
               const isDragging = gameDraggingIndex === index;
@@ -746,6 +802,11 @@ const spelePage = () => `
                     isTarget ? 'game-tile--target' : ''
                   } ${gameClearingIndices.has(index) ? 'game-tile--clearing' : ''} ${
                     gameFallingIndices.has(index) ? 'game-tile--fall' : ''
+                  } ${gameBombTargetIndex === index ? 'game-tile--bomb-target' : ''} ${
+                    gameCrystalTargetIndex === index ? 'game-tile--crystal-target' : ''
+                  } ${gameBombExplosionIndices.has(index) ? 'game-tile--bomb-explode' : ''} ${
+                    gameCrystalExplosionIndices.has(index) ? 'game-tile--crystal-explode' : ''
+                  }
                   }"
                   data-game-index="${index}"
                   type="button"
@@ -757,71 +818,159 @@ const spelePage = () => `
               `;
             })
             .join('')}
+          </div>
         </div>
         ${
-          !gameStarted || gameTimeLeft <= 0
+          gameBombDragging
             ? `
-          <div class="pointer-events-none absolute inset-0 z-10 flex items-center justify-center rounded-3xl bg-slate-950/70 backdrop-blur-sm">
+          <div
+            class="pointer-events-none fixed z-50 flex h-12 w-12 items-center justify-center rounded-2xl border border-white/20 bg-slate-900/80 text-2xl"
+            style="left: ${gameBombDragPos.x - 24}px; top: ${gameBombDragPos.y - 24}px"
+          >
+            💣
+          </div>
+        `
+            : ''
+        }
+        ${
+          gameCrystalDragging
+            ? `
+          <div
+            class="pointer-events-none fixed z-50 flex h-12 w-12 items-center justify-center rounded-2xl border border-white/20 bg-slate-900/80 text-2xl"
+            style="left: ${gameCrystalDragPos.x - 24}px; top: ${gameCrystalDragPos.y - 24}px"
+          >
+            💎
+          </div>
+        `
+            : ''
+        }
+        ${
+          !gameStarted || gameTimeLeft <= 0 || gameUpgradePending
+            ? `
+          <div class="pointer-events-auto absolute inset-0 z-10 flex items-center justify-center rounded-3xl bg-slate-950/70 backdrop-blur-sm">
             ${
-              gameTimeLeft <= 0
+              gameUpgradePending
                 ? `
-              <div class="flex flex-col items-center gap-3 text-center">
-                <p class="text-xs uppercase tracking-[0.3em] text-slate-400">Spēle beigusies</p>
-                <p class="text-2xl font-semibold text-slate-100">${gameScore} punkti</p>
-                ${
-                  gameHighScoreLoading
-                    ? `<p class="text-xs uppercase tracking-[0.25em] text-slate-500">Saglabājam...</p>`
-                    : gameHighScoreError
-                      ? `<p class="text-xs uppercase tracking-[0.25em] text-rose-300">${escapeHtml(
-                          gameHighScoreError,
-                        )}</p>`
-                      : gameHighScore !== null
-                        ? gameHighScoreUpdated
-                          ? `<p class="text-xs uppercase tracking-[0.25em] text-slate-300">Personiskais rekords: ${gameHighScore}</p>`
-                          : `<div class="flex flex-col gap-1 text-xs uppercase tracking-[0.25em] text-slate-300">
-                              <span>Rezultāts: ${gameScore}</span>
-                              <span>Personiskais rekords: ${gameHighScore}</span>
-                            </div>`
-                        : ''
-                }
-                <button
-                  class="pointer-events-auto rounded-full border border-white/10 bg-slate-100 px-6 py-3 text-sm font-semibold uppercase tracking-[0.25em] text-slate-900 transition hover:bg-white"
-                  id="game-restart"
-                  onclick="window.restartGame && window.restartGame()"
-                  type="button"
-                >
-                  Spēlēt vēlreiz
-                </button>
+              <div class="flex flex-col items-center gap-4 text-center">
+                <p class="text-xs uppercase tracking-[0.3em] text-slate-300">Izvēlies uzlabojumu</p>
+                <div class="grid w-full max-w-2xl grid-cols-1 gap-4 sm:grid-cols-3 sm:gap-5">
+                  ${gameUpgradeChoices
+                    .map(
+                      (choice) => `
+                    <button
+                      class="flex h-28 flex-col items-center justify-center gap-2 rounded-2xl border border-white/10 bg-slate-900/70 text-sm uppercase tracking-[0.2em] text-slate-200 transition hover:border-white/30 sm:h-36 sm:gap-3 sm:rounded-3xl sm:text-base"
+                      data-upgrade-choice="${choice}"
+                      onclick="window.selectUpgrade && window.selectUpgrade('${choice}')"
+                      onpointerdown="window.selectUpgrade && window.selectUpgrade('${choice}')"
+                      type="button"
+                    >
+                      <span class="text-3xl sm:text-4xl">${
+                        choice === 'time'
+                          ? '⏱️'
+                          : choice === 'multiplier'
+                            ? '⭐'
+                            : choice === 'refresh'
+                              ? '🔄'
+                              : choice === 'bomb'
+                                ? '💣'
+                                : '💎'
+                      }</span>
+                      <span class="text-xs text-slate-300 sm:text-sm">${getUpgradeLabel(choice)}</span>
+                    </button>
+                  `,
+                    )
+                    .join('')}
+                </div>
               </div>
             `
-                : `
-              <button
-                class="pointer-events-auto rounded-full border border-white/10 bg-slate-100 px-6 py-3 text-sm font-semibold uppercase tracking-[0.25em] text-slate-900 transition hover:bg-white"
-                id="game-start"
-                onclick="window.startGame && window.startGame()"
-                type="button"
-              >
-                Sākt spēli
-              </button>
-            `
+                : gameTimeLeft <= 0
+                  ? `
+                <div class="flex flex-col items-center gap-3 text-center">
+                  <p class="text-xs uppercase tracking-[0.3em] text-slate-400">Spēle beigusies</p>
+                  <p class="text-2xl font-semibold text-slate-100">${gameScore} punkti</p>
+                  ${
+                    gameHighScoreLoading
+                      ? `<p class="text-xs uppercase tracking-[0.25em] text-slate-500">Saglabājam...</p>`
+                      : gameHighScoreError
+                        ? `<p class="text-xs uppercase tracking-[0.25em] text-rose-300">${escapeHtml(
+                            gameHighScoreError,
+                          )}</p>`
+                        : gameHighScore !== null
+                          ? gameHighScoreUpdated
+                            ? `<p class="text-xs uppercase tracking-[0.25em] text-slate-300">Personiskais rekords: ${gameHighScore}</p>`
+                            : `<div class="flex flex-col gap-1 text-xs uppercase tracking-[0.25em] text-slate-300">
+                                <span>Rezultāts: ${gameScore}</span>
+                                <span>Personiskais rekords: ${gameHighScore}</span>
+                              </div>`
+                          : ''
+                  }
+                  <button
+                    class="pointer-events-auto rounded-full border border-white/10 bg-slate-100 px-6 py-3 text-sm font-semibold uppercase tracking-[0.25em] text-slate-900 transition hover:bg-white"
+                    id="game-restart"
+                    onclick="window.restartGame && window.restartGame()"
+                    type="button"
+                  >
+                    Spēlēt vēlreiz
+                  </button>
+                </div>
+              `
+                  : `
+                <button
+                  class="pointer-events-auto rounded-full border border-white/10 bg-slate-100 px-6 py-3 text-sm font-semibold uppercase tracking-[0.25em] text-slate-900 transition hover:bg-white"
+                  id="game-start"
+                  onclick="window.startGame && window.startGame()"
+                  type="button"
+                >
+                  Sākt spēli
+                </button>
+              `
             }
           </div>
         `
             : ''
         }
+      </div>
+      `
+      }
+      <div class="mt-2 flex flex-wrap items-center justify-center gap-3 text-xs uppercase tracking-[0.25em] text-slate-400">
+        <span class="text-slate-500">Inventārs</span>
+        <div class="flex flex-col items-center gap-1">
+          <span class="text-[10px] text-slate-500">${Math.round(gameBombDropChance * 100)}%</span>
+          <button
+            class="flex h-12 w-12 items-center justify-center rounded-2xl border border-white/10 bg-slate-900/60 text-2xl transition hover:border-white/30 disabled:cursor-not-allowed disabled:opacity-40"
+            id="bomb-item"
+            type="button"
+            ${gameBombs <= 0 ? 'disabled' : ''}
+            aria-label="Bumba"
+          >
+            💣
+          </button>
+          <span>${gameBombs}</span>
+        </div>
+        <div class="flex flex-col items-center gap-1">
+          <span class="text-[10px] text-slate-500">${Math.round(gameCrystalDropChance * 100)}%</span>
+          <button
+            class="flex h-12 w-12 items-center justify-center rounded-2xl border border-white/10 bg-slate-900/60 text-2xl transition hover:border-white/30 disabled:cursor-not-allowed disabled:opacity-40"
+            id="crystal-item"
+            type="button"
+            ${gameCrystals <= 0 ? 'disabled' : ''}
+            aria-label="Kristāls"
+          >
+            💎
+          </button>
+          <span>${gameCrystals}</span>
+        </div>
         <button
-          class="flex h-14 w-14 items-center justify-center rounded-2xl border border-white/10 text-2xl text-slate-200 transition hover:border-white/30 disabled:cursor-not-allowed disabled:opacity-50"
+          class="flex h-12 w-12 items-center justify-center rounded-2xl border border-white/10 bg-slate-900/60 text-2xl transition hover:border-white/30 disabled:cursor-not-allowed disabled:opacity-40"
           id="game-refresh"
           type="button"
+          ${gameRefreshCooldown > 0 ? 'disabled' : ''}
           aria-label="Atsvaidzināt"
           title="Atsvaidzināt"
-          ${gameRefreshCooldown > 0 ? 'disabled' : ''}
         >
           ${gameRefreshCooldown > 0 ? `<span class="text-sm font-semibold">${gameRefreshCooldown}</span>` : '↻'}
         </button>
       </div>
-      `
-      }
       <div class="relative z-20 mt-2 flex items-center justify-end gap-4 text-xs uppercase tracking-[0.25em] text-slate-400">
         <label class="flex items-center gap-2">
           <input
@@ -1014,15 +1163,139 @@ const resolveMatchesImmediate = () => {
   }
 };
 
+const applyScore = (points: number) => {
+  if (points <= 0) {
+    return;
+  }
+  const nextScore = gameScore + points;
+  if (nextScore >= UPGRADE_THRESHOLD && gameScore < UPGRADE_THRESHOLD && !gameUpgradePending) {
+    gameUpgradePending = true;
+    gameUpgradeChoices = pickUpgradeChoices();
+    if (gameTimerId) {
+      window.clearInterval(gameTimerId);
+      gameTimerId = null;
+    }
+  }
+  gameScore = nextScore;
+  gameScoreHighlight = true;
+  window.setTimeout(() => {
+    gameScoreHighlight = false;
+    render();
+  }, 500);
+};
+
+const pickUpgradeChoices = (): UpgradeChoice[] => {
+  const shuffled = [...UPGRADE_POOL].sort(() => Math.random() - 0.5);
+  return shuffled.slice(0, 3);
+};
+
+const getUpgradeLabel = (choice: UpgradeChoice) => {
+  const tier = UPGRADE_LABELS[gameUpgradeTier] ?? UPGRADE_LABELS[0];
+  return tier[choice];
+};
+
+const getUpgradeProgress = () => {
+  const score = Math.max(0, gameScore);
+  let segmentStart = 0;
+  let segmentEnd = UPGRADE_THRESHOLDS[0];
+  for (let i = 0; i < UPGRADE_THRESHOLDS.length; i += 1) {
+    const threshold = UPGRADE_THRESHOLDS[i];
+    if (score < threshold) {
+      segmentStart = i === 0 ? 0 : UPGRADE_THRESHOLDS[i - 1];
+      segmentEnd = threshold;
+      break;
+    }
+    if (i === UPGRADE_THRESHOLDS.length - 1) {
+      segmentStart = UPGRADE_THRESHOLDS[UPGRADE_THRESHOLDS.length - 1];
+      segmentEnd = threshold;
+    }
+  }
+  const segmentSize = Math.max(1, segmentEnd - segmentStart);
+  const clamped = Math.min(segmentSize, Math.max(0, score - segmentStart));
+  const percent = (clamped / segmentSize) * 100;
+  return { segmentStart, segmentEnd, percent };
+};
+
 const initGameGrid = () => {
   gameGrid = Array.from({ length: GAME_SIZE * GAME_SIZE }, () => randomEmoji());
   resolveMatchesImmediate();
 };
 
-const swapGridIndices = (fromIndex: number, toIndex: number) => {
-  const temp = gameGrid[fromIndex];
-  gameGrid[fromIndex] = gameGrid[toIndex];
-  gameGrid[toIndex] = temp;
+const getBombIndices = (index: number) => {
+  const row = Math.floor(index / GAME_SIZE);
+  const col = index % GAME_SIZE;
+  const indices = [index];
+  if (row > 0) {
+    indices.push((row - 1) * GAME_SIZE + col);
+  }
+  if (row < GAME_SIZE - 1) {
+    indices.push((row + 1) * GAME_SIZE + col);
+  }
+  if (col > 0) {
+    indices.push(row * GAME_SIZE + (col - 1));
+  }
+  if (col < GAME_SIZE - 1) {
+    indices.push(row * GAME_SIZE + (col + 1));
+  }
+  return indices;
+};
+
+const triggerBombExplosion = (index: number) => {
+  gameBombExplosionIndices = new Set(getBombIndices(index));
+  render();
+  window.setTimeout(() => {
+    gameBombExplosionIndices = new Set();
+    render();
+  }, 320);
+};
+
+const triggerCrystalExplosion = (index: number) => {
+  const target = gameGrid[index];
+  if (!target) {
+    return;
+  }
+  const indices = gameGrid
+    .map((value, idx) => (value === target ? idx : -1))
+    .filter((idx) => idx >= 0);
+  if (indices.length === 0) {
+    return;
+  }
+  gameCrystalExplosionIndices = new Set(indices);
+  render();
+  window.setTimeout(() => {
+    gameCrystalExplosionIndices = new Set();
+    render();
+  }, 320);
+};
+
+const applyBombAt = async (index: number) => {
+  if (gameNetworkBusy) {
+    return;
+  }
+  const state = await sendGameAction('/game/bomb', { index });
+  if (state) {
+    gamePendingBombState = state;
+    triggerBombExplosion(index);
+    window.setTimeout(() => {
+      if (gamePendingBombState) {
+        applyGameState(gamePendingBombState);
+        gamePendingBombState = null;
+      }
+    }, 320);
+  }
+};
+
+const applyCrystalAt = async (index: number) => {
+  if (gameNetworkBusy) {
+    return;
+  }
+  const state = await sendGameAction('/game/crystal', { index });
+  if (state) {
+    triggerCrystalExplosion(index);
+    window.setTimeout(() => {
+      applyGameState(state);
+    }, 320);
+  }
 };
 
 const resolveMatchesAnimated = () => {
@@ -1035,18 +1308,35 @@ const resolveMatchesAnimated = () => {
   }
   gameAnimating = true;
   gameClearingIndices = new Set(matches);
+  if (Math.random() < gameBombDropChance) {
+    gameBombs += 1;
+  }
   if (runs.length > 0) {
+    let points = 0;
     runs.forEach((length) => {
       if (length >= 5) {
-        gameScore += 50;
+        points += 50;
       } else if (length === 4) {
-        gameScore += 20;
+        points += 20;
       } else if (length === 3) {
-        gameScore += 10;
+        points += 10;
       }
     });
+    if (points > 0 && gameScoreMultiplier > 1) {
+      points = Math.round(points * gameScoreMultiplier);
+    }
+    if (points > 0) {
+      applyScore(points);
+    }
   }
-  gameRefreshCooldown = 10;
+  if (gameUpgradePending) {
+    gameRefreshCooldown = gameRefreshBase;
+    if (gameRefreshTimerId) {
+      window.clearInterval(gameRefreshTimerId);
+      gameRefreshTimerId = null;
+    }
+  }
+  gameRefreshCooldown = gameRefreshBase;
   if (!gameRefreshTimerId) {
     gameRefreshTimerId = window.setInterval(() => {
       if (gameRefreshCooldown > 0) {
@@ -1278,6 +1568,8 @@ const render = () => {
   if (resolvedPath !== '/spele') {
     gameAudioStarted = false;
     gameStarted = false;
+    gameSessionLoaded = false;
+    gameUpgradePending = false;
     gameHighScore = null;
     gameHighScoreUpdated = null;
     gameHighScoreLoading = false;
@@ -1741,27 +2033,12 @@ window.startGame = () => {
   if (gameStarted) {
     return;
   }
-  gameStarted = true;
-  gameTimeLeft = 60;
-  gameScore = 0;
   gameHighScore = null;
   gameHighScoreUpdated = null;
   gameHighScoreLoading = false;
   gameHighScoreError = null;
   gameEndSubmitted = false;
-  if (!gameTimerId) {
-    gameTimerId = window.setInterval(() => {
-      if (gameTimeLeft > 0) {
-        gameTimeLeft -= 1;
-        render();
-      }
-      if (gameTimeLeft <= 0 && gameTimerId) {
-        window.clearInterval(gameTimerId);
-        gameTimerId = null;
-            submitHighScore();
-      }
-    }, 1000);
-  }
+  fetchGameSession({ start: true });
   if (!gameAudioStarted) {
     gameAudio.muted = gameAudioMuted;
     gameAudio.volume = gameAudioMuted ? 0 : gameAudioVolume;
@@ -1774,91 +2051,197 @@ window.startGame = () => {
         gameAudioStarted = false;
       });
   }
-  render();
 };
 
 window.restartGame = () => {
-  gameGrid = [];
-  gameClearingIndices = new Set();
-  gameDraggingIndex = null;
-  gameDragTargetIndex = null;
-  gameDragOffset = { x: 0, y: 0 };
-  gameDragAxis = null;
-  gameDragStart = { x: 0, y: 0 };
-  gameDragOrigin = { row: 0, col: 0 };
-  gameScore = 0;
-  gameTimeLeft = 60;
-  gameStarted = true;
   gameHighScore = null;
   gameHighScoreUpdated = null;
   gameHighScoreLoading = false;
   gameHighScoreError = null;
   gameEndSubmitted = false;
-  if (gameTimerId) {
-    window.clearInterval(gameTimerId);
-    gameTimerId = null;
+  gameUpgradePending = false;
+  fetchGameSession({ reset: true, start: true });
+};
+
+window.selectUpgrade = async (choice = 'time' as UpgradeChoice) => {
+  if (!gameUpgradePending) {
+    return;
   }
-  gameTimerId = window.setInterval(() => {
-    if (gameTimeLeft > 0) {
-      gameTimeLeft -= 1;
-      render();
-    }
-    if (gameTimeLeft <= 0 && gameTimerId) {
-      window.clearInterval(gameTimerId);
-      gameTimerId = null;
-          submitHighScore();
-    }
-  }, 1000);
-  gameRefreshCooldown = 10;
-  if (gameRefreshTimerId) {
-    window.clearInterval(gameRefreshTimerId);
-    gameRefreshTimerId = null;
+  const state = await sendGameAction('/game/upgrade', { choice });
+  if (state) {
+    applyGameState(state);
   }
-  gameRefreshTimerId = window.setInterval(() => {
-    if (gameRefreshCooldown > 0) {
-      gameRefreshCooldown -= 1;
-      render();
-    }
-    if (gameRefreshCooldown <= 0 && gameRefreshTimerId) {
-      window.clearInterval(gameRefreshTimerId);
-      gameRefreshTimerId = null;
-    }
-  }, 1000);
-  initGameGrid();
+};
+
+type GameState = {
+  grid: string[];
+  score: number;
+  timeLeft: number;
+  status: 'ready' | 'active' | 'ended' | 'upgrade';
+  bombs: number;
+  crystals: number;
+  bombDropChance: number;
+  crystalDropChance: number;
+  scoreMultiplier: number;
+  refreshBase: number;
+  upgradePending: boolean;
+  upgradeTier: number;
+  upgradeChoices: UpgradeChoice[];
+};
+
+const applyGameState = (state: GameState) => {
+  const previousScore = gameScore;
+  const previousBombs = gameBombs;
+  const previousCrystals = gameCrystals;
+  gameGrid = state.grid;
+  gameScore = state.score;
+  gameTimeLeft = state.timeLeft;
+  gameStarted = state.status === 'active';
+  gameBombs = state.bombs;
+  gameCrystals = state.crystals ?? 0;
+  gameBombDropChance = state.bombDropChance;
+  gameCrystalDropChance = state.crystalDropChance ?? 0;
+  gameScoreMultiplier = state.scoreMultiplier;
+  gameRefreshBase = state.refreshBase;
+  gameRefreshCooldown = state.refreshBase;
+  gameUpgradePending = state.upgradePending || state.status === 'upgrade';
+  gameUpgradeTier = state.upgradeTier ?? -1;
+  gameUpgradeChoices = state.upgradeChoices ?? [];
+  gameSessionLoaded = true;
+  if (gameTimeLeft <= 0 && !gameEndSubmitted) {
+    endGame();
+  }
+  if (state.score > previousScore) {
+    explosionAudio.currentTime = 0;
+    explosionAudio.volume = 0.7;
+    explosionAudio.muted = gameAudioMuted;
+    explosionAudio.play().catch(() => {});
+  }
+  if (state.bombs > previousBombs) {
+    spawnBombFlyAnimation();
+  }
+  if (state.crystals > previousCrystals) {
+    spawnCrystalFlyAnimation();
+  }
   render();
 };
 
-const submitHighScore = async () => {
-  if (!currentUser || gameEndSubmitted) {
-    return;
+const sendGameAction = async (path: string, body: Record<string, unknown>) => {
+  if (!authToken) {
+    return null;
   }
-  gameHighScoreLoading = true;
-  gameHighScoreError = null;
-  gameEndSubmitted = true;
-  render();
+  if (gameNetworkBusy) {
+    return null;
+  }
+  gameNetworkBusy = true;
   try {
-    const headers: Record<string, string> = {
-      'Content-Type': 'application/json',
-    };
-    if (authToken) {
-      headers.Authorization = `Bearer ${authToken}`;
-    }
-    const response = await fetch(`${API_BASE_URL}/users/highscore`, {
+    const response = await fetch(`${API_BASE_URL}${path}`, {
       method: 'POST',
-      headers,
-      body: JSON.stringify({ score: gameScore }),
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${authToken}`,
+      },
+      body: JSON.stringify(body),
     });
     if (!response.ok) {
-      throw new Error('Highscore failed');
+      throw new Error('Game request failed');
     }
-    const data = (await response.json()) as { highScore?: number | null; updated?: boolean };
-    gameHighScore = typeof data.highScore === 'number' ? data.highScore : null;
-    gameHighScoreUpdated = Boolean(data.updated);
-    gameHighScoreLoading = false;
-    render();
-  } catch (error) {
-    gameHighScoreLoading = false;
+    return (await response.json()) as GameState;
+  } catch {
+    return null;
+  } finally {
+    gameNetworkBusy = false;
+  }
+};
+
+const spawnBombFlyAnimation = () => {
+  const grid = document.getElementById('game-grid');
+  const bombButton = document.getElementById('bomb-item');
+  if (!grid || !bombButton) {
+    return;
+  }
+  const gridRect = grid.getBoundingClientRect();
+  const bombRect = bombButton.getBoundingClientRect();
+  const startX = gridRect.left + gridRect.width / 2;
+  const startY = gridRect.top + gridRect.height / 2;
+  const endX = bombRect.left + bombRect.width / 2;
+  const endY = bombRect.top + bombRect.height / 2;
+
+  const el = document.createElement('div');
+  el.className = 'bomb-fly';
+  el.textContent = '💣';
+  el.style.left = `${startX - 16}px`;
+  el.style.top = `${startY - 16}px`;
+  document.body.appendChild(el);
+  requestAnimationFrame(() => {
+    el.style.transform = `translate(${endX - startX}px, ${endY - startY}px) scale(0.8)`;
+  });
+  window.setTimeout(() => {
+    el.remove();
+  }, 650);
+};
+
+const spawnCrystalFlyAnimation = () => {
+  const grid = document.getElementById('game-grid');
+  const crystalButton = document.getElementById('crystal-item');
+  if (!grid || !crystalButton) {
+    return;
+  }
+  const gridRect = grid.getBoundingClientRect();
+  const crystalRect = crystalButton.getBoundingClientRect();
+  const startX = gridRect.left + gridRect.width / 2;
+  const startY = gridRect.top + gridRect.height / 2;
+  const endX = crystalRect.left + crystalRect.width / 2;
+  const endY = crystalRect.top + crystalRect.height / 2;
+
+  const el = document.createElement('div');
+  el.className = 'crystal-fly';
+  el.textContent = '💎';
+  el.style.left = `${startX - 16}px`;
+  el.style.top = `${startY - 16}px`;
+  document.body.appendChild(el);
+  requestAnimationFrame(() => {
+    el.style.transform = `translate(${endX - startX}px, ${endY - startY}px) scale(0.8)`;
+  });
+  window.setTimeout(() => {
+    el.remove();
+  }, 650);
+};
+
+const fetchGameSession = async (options?: { start?: boolean; reset?: boolean }) => {
+  const state = await sendGameAction('/game/session', options ?? {});
+  if (state) {
+    applyGameState(state);
+  }
+};
+
+const endGame = async () => {
+  if (!authToken || gameEndSubmitted) {
+    return;
+  }
+  gameEndSubmitted = true;
+  try {
+    const response = await fetch(`${API_BASE_URL}/game/end`, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${authToken}`,
+      },
+    });
+    if (!response.ok) {
+      throw new Error('End game failed');
+    }
+    const data = (await response.json()) as {
+      score?: number;
+      highScore?: number | null;
+      updated?: boolean;
+    };
+    if (typeof data.highScore === 'number') {
+      gameHighScore = data.highScore;
+      gameHighScoreUpdated = Boolean(data.updated);
+    }
+  } catch {
     gameHighScoreError = 'Neizdevās saglabāt rezultātu.';
+  } finally {
     render();
   }
 };
@@ -1867,11 +2250,68 @@ function initGame() {
   if (!currentUser) {
     return;
   }
+
+  if (!gameSessionLoaded) {
+    fetchGameSession();
+    return;
+  }
+
+  if (!gameUpgradeBound) {
+    gameUpgradeBound = true;
+    document.addEventListener(
+      'click',
+      (event) => {
+        if (!gameUpgradePending) {
+          return;
+        }
+        const path = (event.composedPath?.() ?? []).filter(
+          (node): node is HTMLElement => node instanceof HTMLElement,
+        );
+        const target =
+          ((event.target as HTMLElement | null)?.closest?.('[data-upgrade-choice]') as
+            | HTMLElement
+            | null) ?? path.find((node) => node.dataset?.upgradeChoice);
+        if (!target) {
+          return;
+        }
+        event.preventDefault();
+        event.stopPropagation();
+        const choice =
+          (target.dataset.upgradeChoice ?? target.getAttribute('data-upgrade-choice')) as
+            | UpgradeChoice
+            | null;
+        if (window.selectUpgrade && choice) {
+          window.selectUpgrade(choice);
+        }
+      },
+      true,
+    );
+  }
+
+  // upgrade handled by window.selectUpgrade
   if (!gameStartBound) {
     gameStartBound = true;
     document.addEventListener(
       'pointerdown',
       (event) => {
+        const path = (event.composedPath?.() ?? []).filter(
+          (node): node is HTMLElement => node instanceof HTMLElement,
+        );
+        const upgradeTarget =
+          ((event.target as HTMLElement | null)?.closest?.('[data-upgrade-choice]') as
+            | HTMLElement
+            | null) ?? path.find((node) => node.dataset?.upgradeChoice);
+        if (gameUpgradePending && upgradeTarget && window.selectUpgrade) {
+          event.preventDefault();
+          event.stopPropagation();
+          const choice =
+            (upgradeTarget.dataset.upgradeChoice ??
+              upgradeTarget.getAttribute('data-upgrade-choice')) as UpgradeChoice | null;
+          if (choice) {
+            window.selectUpgrade(choice);
+          }
+          return;
+        }
         const target = (event.target as HTMLElement | null)?.closest('#game-start, #game-restart');
         if (!target) {
           return;
@@ -1892,7 +2332,7 @@ function initGame() {
     );
   }
 
-  if (!gameTimerId && gameTimeLeft > 0 && gameStarted) {
+  if (!gameTimerId && gameTimeLeft > 0 && gameStarted && !gameUpgradePending) {
     gameTimerId = window.setInterval(() => {
       if (gameTimeLeft > 0) {
         gameTimeLeft -= 1;
@@ -1901,9 +2341,13 @@ function initGame() {
       if (gameTimeLeft <= 0 && gameTimerId) {
         window.clearInterval(gameTimerId);
         gameTimerId = null;
-        submitHighScore();
+        endGame();
       }
     }, 1000);
+  }
+  if (gameTimerId && (!gameStarted || gameUpgradePending)) {
+    window.clearInterval(gameTimerId);
+    gameTimerId = null;
   }
 
   if (!gameRefreshTimerId && gameRefreshCooldown > 0) {
@@ -1928,28 +2372,40 @@ function initGame() {
       if (gameRefreshCooldown > 0) {
         return;
       }
-      gameGrid = [];
-      gameClearingIndices = new Set();
-      gameDraggingIndex = null;
-      gameDragTargetIndex = null;
-      gameDragOffset = { x: 0, y: 0 };
-      gameDragAxis = null;
-      gameDragStart = { x: 0, y: 0 };
-      gameDragOrigin = { row: 0, col: 0 };
-      gameRefreshCooldown = 10;
-      if (!gameRefreshTimerId) {
-        gameRefreshTimerId = window.setInterval(() => {
-          if (gameRefreshCooldown > 0) {
-            gameRefreshCooldown -= 1;
-            render();
-          }
-          if (gameRefreshCooldown <= 0 && gameRefreshTimerId) {
-            window.clearInterval(gameRefreshTimerId);
-            gameRefreshTimerId = null;
-          }
-        }, 1000);
+      sendGameAction('/game/refresh', {}).then((state) => {
+        if (state) {
+          applyGameState(state);
+        }
+      });
+    });
+  }
+
+  const bombButton = document.getElementById('bomb-item');
+  if (bombButton) {
+    bombButton.addEventListener('pointerdown', (event) => {
+      if (gameBombs <= 0 || gameUpgradePending || !gameStarted || gameTimeLeft <= 0) {
+        return;
       }
-      initGameGrid();
+      event.preventDefault();
+      event.stopPropagation();
+      gameBombDragging = true;
+      gameBombDragPos = { x: (event as PointerEvent).clientX, y: (event as PointerEvent).clientY };
+      gameBombTargetIndex = null;
+      render();
+    });
+  }
+
+  const crystalButton = document.getElementById('crystal-item');
+  if (crystalButton) {
+    crystalButton.addEventListener('pointerdown', (event) => {
+      if (gameCrystals <= 0 || gameUpgradePending || !gameStarted || gameTimeLeft <= 0) {
+        return;
+      }
+      event.preventDefault();
+      event.stopPropagation();
+      gameCrystalDragging = true;
+      gameCrystalDragPos = { x: (event as PointerEvent).clientX, y: (event as PointerEvent).clientY };
+      gameCrystalTargetIndex = null;
       render();
     });
   }
@@ -2008,6 +2464,9 @@ function initGame() {
   if (grid.dataset.bound !== 'true') {
     grid.dataset.bound = 'true';
     grid.addEventListener('pointerdown', (event) => {
+      if (gameUpgradePending) {
+        return;
+      }
       if (!gameStarted) {
         return;
       }
@@ -2042,6 +2501,9 @@ function initGame() {
 
     grid.addEventListener('pointermove', (event) => {
       if (gameDraggingIndex === null) {
+        return;
+      }
+      if (gameUpgradePending) {
         return;
       }
       if (!gameStarted) {
@@ -2087,7 +2549,76 @@ function initGame() {
 
   if (!gamePointerUpBound) {
     gamePointerUpBound = true;
-    window.addEventListener('pointerup', () => {
+    window.addEventListener('pointermove', (event) => {
+      if (gameCrystalDragging) {
+        gameCrystalDragPos = {
+          x: (event as PointerEvent).clientX,
+          y: (event as PointerEvent).clientY,
+        };
+        const el = document.elementFromPoint(gameCrystalDragPos.x, gameCrystalDragPos.y) as
+          | HTMLElement
+          | null;
+        const cell = el?.closest?.('[data-game-index]') as HTMLElement | null;
+        if (cell) {
+          const idx = Number(cell.getAttribute('data-game-index'));
+          gameCrystalTargetIndex = Number.isNaN(idx) ? null : idx;
+        } else {
+          gameCrystalTargetIndex = null;
+        }
+        render();
+        return;
+      }
+      if (!gameBombDragging) {
+        return;
+      }
+      gameBombDragPos = { x: (event as PointerEvent).clientX, y: (event as PointerEvent).clientY };
+      const el = document.elementFromPoint(gameBombDragPos.x, gameBombDragPos.y) as HTMLElement | null;
+      const cell = el?.closest?.('[data-game-index]') as HTMLElement | null;
+      if (cell) {
+        const idx = Number(cell.getAttribute('data-game-index'));
+        gameBombTargetIndex = Number.isNaN(idx) ? null : idx;
+      } else {
+        gameBombTargetIndex = null;
+      }
+      render();
+    });
+    window.addEventListener('pointerup', (event) => {
+      if (gameCrystalDragging) {
+        const el = document.elementFromPoint(event.clientX, event.clientY) as HTMLElement | null;
+        const cell = el?.closest?.('[data-game-index]') as HTMLElement | null;
+        const idx = cell ? Number(cell.getAttribute('data-game-index')) : NaN;
+        gameCrystalDragging = false;
+        gameCrystalTargetIndex = null;
+        if (!Number.isNaN(idx)) {
+          gameCrystals = Math.max(0, gameCrystals - 1);
+          applyCrystalAt(idx);
+        }
+        render();
+        return;
+      }
+      if (gameBombDragging) {
+        const el = document.elementFromPoint(event.clientX, event.clientY) as HTMLElement | null;
+        const cell = el?.closest?.('[data-game-index]') as HTMLElement | null;
+        const idx = cell ? Number(cell.getAttribute('data-game-index')) : NaN;
+        gameBombDragging = false;
+        gameBombTargetIndex = null;
+        if (!Number.isNaN(idx)) {
+          gameBombs = Math.max(0, gameBombs - 1);
+          applyBombAt(idx);
+        }
+        render();
+        return;
+      }
+      if (gameUpgradePending) {
+        gameDraggingIndex = null;
+        gameDragTargetIndex = null;
+        gameDragOffset = { x: 0, y: 0 };
+        gameDragAxis = null;
+        gameDragStart = { x: 0, y: 0 };
+        gameDragOrigin = { row: 0, col: 0 };
+        render();
+        return;
+      }
       if (!gameStarted) {
         gameDraggingIndex = null;
         gameDragTargetIndex = null;
@@ -2130,16 +2661,17 @@ function initGame() {
       swipeAudio.muted = gameAudioMuted;
       swipeAudio.play().catch(() => {});
       if (fromIndex !== toIndex) {
-        swapGridIndices(fromIndex, toIndex);
-        if (getMatchRuns(gameGrid).matches.size > 0) {
-          resolveMatchesAnimated();
-        } else {
-          swapGridIndices(fromIndex, toIndex);
-        }
+        sendGameAction('/game/move', { from: fromIndex, to: toIndex }).then((state) => {
+          if (state) {
+            applyGameState(state);
+          }
+        });
       }
       render();
     });
   }
+
+  // upgrade click handled globally
 }
 
 type PublicParticipant = {
