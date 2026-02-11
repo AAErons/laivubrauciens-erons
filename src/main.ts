@@ -145,6 +145,10 @@ let gameBombExplosionIndices = new Set<number>();
 let gameCrystalExplosionIndices = new Set<number>();
 let gameAnimating = false;
 let gameFalling = false;
+let gamePendingMatchTimer: number | null = null;
+let gamePredicting = false;
+let gamePendingServerState: GameState | null = null;
+let gamePredictionTimers: number[] = [];
 let gameAudioStarted = false;
 let gameAudioMuted = false;
 let gameAudioVolume = 0.35;
@@ -1227,6 +1231,62 @@ const swapGridIndices = (grid: string[], from: number, to: number) => {
   next[from] = next[to];
   next[to] = temp;
   return next;
+};
+
+const clearPredictionTimers = () => {
+  gamePredictionTimers.forEach((timerId) => window.clearTimeout(timerId));
+  gamePredictionTimers = [];
+};
+
+const resolveMatchesPreview = () => {
+  if (gameAnimating) {
+    return;
+  }
+  const { matches } = getMatchRuns(gameGrid);
+  if (matches.size === 0) {
+    return;
+  }
+  gameAnimating = true;
+  gamePredicting = true;
+  gameClearingIndices = new Set(matches);
+  explosionAudio.currentTime = 0;
+  explosionAudio.volume = 0.7;
+  explosionAudio.muted = gameAudioMuted;
+  explosionAudio.play().catch(() => {});
+  render();
+
+  clearPredictionTimers();
+  gamePredictionTimers.push(
+    window.setTimeout(() => {
+      matches.forEach((index) => {
+        gameGrid[index] = '';
+      });
+      const filled = collapseGrid(gameGrid);
+      gameClearingIndices = new Set();
+      gameFalling = true;
+      gameFallingIndices = filled;
+      render();
+
+      gamePredictionTimers.push(
+        window.setTimeout(() => {
+          gameFalling = false;
+          gameFallingIndices = new Set();
+          render();
+          gameAnimating = false;
+          if (getMatchRuns(gameGrid).matches.size > 0) {
+            resolveMatchesPreview();
+            return;
+          }
+          gamePredicting = false;
+          if (gamePendingServerState) {
+            const nextState = gamePendingServerState;
+            gamePendingServerState = null;
+            applyGameState(nextState);
+          }
+        }, 320),
+      );
+    }, 200),
+  );
 };
 
 const getBombIndices = (index: number) => {
@@ -2730,14 +2790,28 @@ function initGame() {
       if (fromIndex !== toIndex) {
         const previousGrid = gameGrid;
         gameGrid = swapGridIndices(gameGrid, fromIndex, toIndex);
+        const { matches } = getMatchRuns(gameGrid);
+        if (matches.size > 0) {
+          resolveMatchesPreview();
+        }
         render();
         sendGameAction('/game/move', { from: fromIndex, to: toIndex }).then((state) => {
           if (state) {
-            applyGameState(state);
+            if (gamePredicting) {
+              gamePendingServerState = state;
+            } else {
+              applyGameState(state);
+            }
           } else {
             gameGrid = previousGrid;
             render();
           }
+          if (gamePendingMatchTimer) {
+            window.clearTimeout(gamePendingMatchTimer);
+            gamePendingMatchTimer = null;
+          }
+          gameClearingIndices = new Set();
+          render();
         });
       }
       render();
