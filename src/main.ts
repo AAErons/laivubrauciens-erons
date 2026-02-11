@@ -862,13 +862,13 @@ const spelePage = () => `
                     .map(
                       (choice) => `
                     <button
-                      class="flex h-28 flex-col items-center justify-center gap-2 rounded-2xl border border-white/10 bg-slate-900/70 text-sm uppercase tracking-[0.2em] text-slate-200 transition hover:border-white/30 sm:h-36 sm:gap-3 sm:rounded-3xl sm:text-base"
+                      class="flex h-24 flex-col items-center justify-center gap-1.5 rounded-2xl border border-white/10 bg-slate-900/70 text-xs uppercase tracking-[0.2em] text-slate-200 transition hover:border-white/30 sm:h-36 sm:gap-3 sm:rounded-3xl sm:text-base"
                       data-upgrade-choice="${choice}"
                       onclick="window.selectUpgrade && window.selectUpgrade('${choice}')"
                       onpointerdown="window.selectUpgrade && window.selectUpgrade('${choice}')"
                       type="button"
                     >
-                      <span class="text-3xl sm:text-4xl">${
+                      <span class="text-2xl sm:text-4xl">${
                         choice === 'time'
                           ? '⏱️'
                           : choice === 'multiplier'
