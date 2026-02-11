@@ -937,7 +937,7 @@ const spelePage = () => `
         <div class="flex flex-col items-center gap-1">
           <span class="text-[10px] text-slate-500">${Math.round(gameBombDropChance * 100)}%</span>
           <button
-            class="flex h-12 w-12 items-center justify-center rounded-2xl border border-white/10 bg-slate-900/60 text-2xl transition hover:border-white/30 disabled:cursor-not-allowed disabled:opacity-40"
+            class="game-inventory-item flex h-12 w-12 items-center justify-center rounded-2xl border border-white/10 bg-slate-900/60 text-2xl transition hover:border-white/30 disabled:cursor-not-allowed disabled:opacity-40"
             id="bomb-item"
             type="button"
             ${gameBombs <= 0 ? 'disabled' : ''}
@@ -950,7 +950,7 @@ const spelePage = () => `
         <div class="flex flex-col items-center gap-1">
           <span class="text-[10px] text-slate-500">${Math.round(gameCrystalDropChance * 100)}%</span>
           <button
-            class="flex h-12 w-12 items-center justify-center rounded-2xl border border-white/10 bg-slate-900/60 text-2xl transition hover:border-white/30 disabled:cursor-not-allowed disabled:opacity-40"
+            class="game-inventory-item flex h-12 w-12 items-center justify-center rounded-2xl border border-white/10 bg-slate-900/60 text-2xl transition hover:border-white/30 disabled:cursor-not-allowed disabled:opacity-40"
             id="crystal-item"
             type="button"
             ${gameCrystals <= 0 ? 'disabled' : ''}
@@ -2208,6 +2208,37 @@ const spawnCrystalFlyAnimation = () => {
   }, 650);
 };
 
+const getTouchPoint = (event: TouchEvent) => {
+  const touch = event.touches[0] ?? event.changedTouches[0];
+  return touch ? { x: touch.clientX, y: touch.clientY } : null;
+};
+
+const updateCrystalDragTarget = (x: number, y: number) => {
+  gameCrystalDragPos = { x, y };
+  const el = document.elementFromPoint(x, y) as HTMLElement | null;
+  const cell = el?.closest?.('[data-game-index]') as HTMLElement | null;
+  if (cell) {
+    const idx = Number(cell.getAttribute('data-game-index'));
+    gameCrystalTargetIndex = Number.isNaN(idx) ? null : idx;
+  } else {
+    gameCrystalTargetIndex = null;
+  }
+  render();
+};
+
+const updateBombDragTarget = (x: number, y: number) => {
+  gameBombDragPos = { x, y };
+  const el = document.elementFromPoint(x, y) as HTMLElement | null;
+  const cell = el?.closest?.('[data-game-index]') as HTMLElement | null;
+  if (cell) {
+    const idx = Number(cell.getAttribute('data-game-index'));
+    gameBombTargetIndex = Number.isNaN(idx) ? null : idx;
+  } else {
+    gameBombTargetIndex = null;
+  }
+  render();
+};
+
 const fetchGameSession = async (options?: { start?: boolean; reset?: boolean }) => {
   const state = await sendGameAction('/game/session', options ?? {});
   if (state) {
@@ -2389,10 +2420,25 @@ function initGame() {
       event.preventDefault();
       event.stopPropagation();
       gameBombDragging = true;
-      gameBombDragPos = { x: (event as PointerEvent).clientX, y: (event as PointerEvent).clientY };
-      gameBombTargetIndex = null;
-      render();
+      updateBombDragTarget((event as PointerEvent).clientX, (event as PointerEvent).clientY);
     });
+    bombButton.addEventListener(
+      'touchstart',
+      (event) => {
+        if (gameBombs <= 0 || gameUpgradePending || !gameStarted || gameTimeLeft <= 0) {
+          return;
+        }
+        const point = getTouchPoint(event);
+        if (!point) {
+          return;
+        }
+        event.preventDefault();
+        event.stopPropagation();
+        gameBombDragging = true;
+        updateBombDragTarget(point.x, point.y);
+      },
+      { passive: false },
+    );
   }
 
   const crystalButton = document.getElementById('crystal-item');
@@ -2404,10 +2450,25 @@ function initGame() {
       event.preventDefault();
       event.stopPropagation();
       gameCrystalDragging = true;
-      gameCrystalDragPos = { x: (event as PointerEvent).clientX, y: (event as PointerEvent).clientY };
-      gameCrystalTargetIndex = null;
-      render();
+      updateCrystalDragTarget((event as PointerEvent).clientX, (event as PointerEvent).clientY);
     });
+    crystalButton.addEventListener(
+      'touchstart',
+      (event) => {
+        if (gameCrystals <= 0 || gameUpgradePending || !gameStarted || gameTimeLeft <= 0) {
+          return;
+        }
+        const point = getTouchPoint(event);
+        if (!point) {
+          return;
+        }
+        event.preventDefault();
+        event.stopPropagation();
+        gameCrystalDragging = true;
+        updateCrystalDragTarget(point.x, point.y);
+      },
+      { passive: false },
+    );
   }
 
   const muteToggle = document.getElementById('game-audio-mute') as HTMLInputElement | null;
@@ -2551,37 +2612,35 @@ function initGame() {
     gamePointerUpBound = true;
     window.addEventListener('pointermove', (event) => {
       if (gameCrystalDragging) {
-        gameCrystalDragPos = {
-          x: (event as PointerEvent).clientX,
-          y: (event as PointerEvent).clientY,
-        };
-        const el = document.elementFromPoint(gameCrystalDragPos.x, gameCrystalDragPos.y) as
-          | HTMLElement
-          | null;
-        const cell = el?.closest?.('[data-game-index]') as HTMLElement | null;
-        if (cell) {
-          const idx = Number(cell.getAttribute('data-game-index'));
-          gameCrystalTargetIndex = Number.isNaN(idx) ? null : idx;
-        } else {
-          gameCrystalTargetIndex = null;
-        }
-        render();
+        updateCrystalDragTarget((event as PointerEvent).clientX, (event as PointerEvent).clientY);
         return;
       }
       if (!gameBombDragging) {
         return;
       }
-      gameBombDragPos = { x: (event as PointerEvent).clientX, y: (event as PointerEvent).clientY };
-      const el = document.elementFromPoint(gameBombDragPos.x, gameBombDragPos.y) as HTMLElement | null;
-      const cell = el?.closest?.('[data-game-index]') as HTMLElement | null;
-      if (cell) {
-        const idx = Number(cell.getAttribute('data-game-index'));
-        gameBombTargetIndex = Number.isNaN(idx) ? null : idx;
-      } else {
-        gameBombTargetIndex = null;
-      }
-      render();
+      updateBombDragTarget((event as PointerEvent).clientX, (event as PointerEvent).clientY);
     });
+    window.addEventListener(
+      'touchmove',
+      (event) => {
+        if (!gameBombDragging && !gameCrystalDragging) {
+          return;
+        }
+        const point = getTouchPoint(event);
+        if (!point) {
+          return;
+        }
+        event.preventDefault();
+        if (gameCrystalDragging) {
+          updateCrystalDragTarget(point.x, point.y);
+          return;
+        }
+        if (gameBombDragging) {
+          updateBombDragTarget(point.x, point.y);
+        }
+      },
+      { passive: false },
+    );
     window.addEventListener('pointerup', (event) => {
       if (gameCrystalDragging) {
         const el = document.elementFromPoint(event.clientX, event.clientY) as HTMLElement | null;
@@ -2669,6 +2728,57 @@ function initGame() {
       }
       render();
     });
+    window.addEventListener(
+      'touchend',
+      (event) => {
+        const point = getTouchPoint(event);
+        if (!point) {
+          gameBombDragging = false;
+          gameCrystalDragging = false;
+          gameBombTargetIndex = null;
+          gameCrystalTargetIndex = null;
+          render();
+          return;
+        }
+        if (gameCrystalDragging) {
+          const el = document.elementFromPoint(point.x, point.y) as HTMLElement | null;
+          const cell = el?.closest?.('[data-game-index]') as HTMLElement | null;
+          const idx = cell ? Number(cell.getAttribute('data-game-index')) : NaN;
+          gameCrystalDragging = false;
+          gameCrystalTargetIndex = null;
+          if (!Number.isNaN(idx)) {
+            gameCrystals = Math.max(0, gameCrystals - 1);
+            applyCrystalAt(idx);
+          }
+          render();
+          return;
+        }
+        if (gameBombDragging) {
+          const el = document.elementFromPoint(point.x, point.y) as HTMLElement | null;
+          const cell = el?.closest?.('[data-game-index]') as HTMLElement | null;
+          const idx = cell ? Number(cell.getAttribute('data-game-index')) : NaN;
+          gameBombDragging = false;
+          gameBombTargetIndex = null;
+          if (!Number.isNaN(idx)) {
+            gameBombs = Math.max(0, gameBombs - 1);
+            applyBombAt(idx);
+          }
+          render();
+        }
+      },
+      { passive: false },
+    );
+    window.addEventListener(
+      'touchcancel',
+      () => {
+        gameBombDragging = false;
+        gameCrystalDragging = false;
+        gameBombTargetIndex = null;
+        gameCrystalTargetIndex = null;
+        render();
+      },
+      { passive: true },
+    );
   }
 
   // upgrade click handled globally

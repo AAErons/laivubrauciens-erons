@@ -186,6 +186,10 @@
     animation: crystalExplode 0.32s ease-out;
   }
 
+  .game-inventory-item {
+    touch-action: none;
+  }
+
   .bomb-fly {
     @apply pointer-events-none fixed z-50 flex h-8 w-8 items-center justify-center;
     font-size: 24px;
