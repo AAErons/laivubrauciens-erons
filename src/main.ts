@@ -1221,6 +1221,14 @@ const initGameGrid = () => {
   resolveMatchesImmediate();
 };
 
+const swapGridIndices = (grid: string[], from: number, to: number) => {
+  const next = [...grid];
+  const temp = next[from];
+  next[from] = next[to];
+  next[to] = temp;
+  return next;
+};
+
 const getBombIndices = (index: number) => {
   const row = Math.floor(index / GAME_SIZE);
   const col = index % GAME_SIZE;
@@ -2720,9 +2728,15 @@ function initGame() {
       swipeAudio.muted = gameAudioMuted;
       swipeAudio.play().catch(() => {});
       if (fromIndex !== toIndex) {
+        const previousGrid = gameGrid;
+        gameGrid = swapGridIndices(gameGrid, fromIndex, toIndex);
+        render();
         sendGameAction('/game/move', { from: fromIndex, to: toIndex }).then((state) => {
           if (state) {
             applyGameState(state);
+          } else {
+            gameGrid = previousGrid;
+            render();
           }
         });
       }
