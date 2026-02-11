@@ -719,10 +719,10 @@ const formatParticipantName = (user: TaskResult) => {
 const spelePage = () => `
   <section class="rounded-3xl border border-white/5 bg-white/5 p-8">
     <div class="flex flex-col gap-6">
-      <div class="flex flex-wrap items-center justify-center gap-6 text-sm uppercase tracking-[0.3em] text-slate-300">
+      <div class="flex flex-nowrap items-center justify-center gap-3 text-xs uppercase tracking-[0.3em] text-slate-300 sm:gap-6 sm:text-sm">
           <div class="flex items-center gap-2">
             <span class="text-slate-500">Laiks</span>
-            <span class="rounded-full border border-white/10 px-3 py-1.5 text-lg text-slate-100">
+            <span class="rounded-full border border-white/10 px-2 py-1 text-base text-slate-100 sm:px-3 sm:py-1.5 sm:text-lg">
               ${String(Math.floor(gameTimeLeft / 60)).padStart(2, '0')}:${String(
                 gameTimeLeft % 60,
               ).padStart(2, '0')}
@@ -731,7 +731,7 @@ const spelePage = () => `
           <div class="flex items-center gap-2">
             <span class="text-slate-500">Punkti</span>
             <span
-              class="rounded-full border px-3 py-1.5 text-lg transition ${
+              class="rounded-full border px-2 py-1 text-base transition sm:px-3 sm:py-1.5 sm:text-lg ${
                 gameScoreHighlight
                   ? 'border-emerald-400/60 bg-emerald-400/20 text-emerald-100 shadow-[0_0_12px_rgba(16,185,129,0.45)]'
                   : 'border-white/10 text-slate-100'
@@ -932,12 +932,12 @@ const spelePage = () => `
       </div>
       `
       }
-      <div class="mt-2 flex flex-wrap items-center justify-center gap-3 text-xs uppercase tracking-[0.25em] text-slate-400">
+      <div class="mt-2 flex flex-nowrap items-center justify-center gap-2 text-xs uppercase tracking-[0.25em] text-slate-400 sm:gap-3">
         <span class="text-slate-500">Inventārs</span>
         <div class="flex flex-col items-center gap-1">
-          <span class="text-[10px] text-slate-500">${Math.round(gameBombDropChance * 100)}%</span>
+          <span class="text-[9px] text-slate-500 sm:text-[10px]">${Math.round(gameBombDropChance * 100)}%</span>
           <button
-            class="game-inventory-item flex h-12 w-12 items-center justify-center rounded-2xl border border-white/10 bg-slate-900/60 text-2xl transition hover:border-white/30 disabled:cursor-not-allowed disabled:opacity-40"
+            class="game-inventory-item flex h-10 w-10 items-center justify-center rounded-2xl border border-white/10 bg-slate-900/60 text-xl transition hover:border-white/30 disabled:cursor-not-allowed disabled:opacity-40 sm:h-12 sm:w-12 sm:text-2xl"
             id="bomb-item"
             type="button"
             ${gameBombs <= 0 ? 'disabled' : ''}
@@ -948,9 +948,9 @@ const spelePage = () => `
           <span>${gameBombs}</span>
         </div>
         <div class="flex flex-col items-center gap-1">
-          <span class="text-[10px] text-slate-500">${Math.round(gameCrystalDropChance * 100)}%</span>
+          <span class="text-[9px] text-slate-500 sm:text-[10px]">${Math.round(gameCrystalDropChance * 100)}%</span>
           <button
-            class="game-inventory-item flex h-12 w-12 items-center justify-center rounded-2xl border border-white/10 bg-slate-900/60 text-2xl transition hover:border-white/30 disabled:cursor-not-allowed disabled:opacity-40"
+            class="game-inventory-item flex h-10 w-10 items-center justify-center rounded-2xl border border-white/10 bg-slate-900/60 text-xl transition hover:border-white/30 disabled:cursor-not-allowed disabled:opacity-40 sm:h-12 sm:w-12 sm:text-2xl"
             id="crystal-item"
             type="button"
             ${gameCrystals <= 0 ? 'disabled' : ''}
@@ -961,7 +961,7 @@ const spelePage = () => `
           <span>${gameCrystals}</span>
         </div>
         <button
-          class="flex h-12 w-12 items-center justify-center rounded-2xl border border-white/10 bg-slate-900/60 text-2xl transition hover:border-white/30 disabled:cursor-not-allowed disabled:opacity-40"
+          class="flex h-10 w-10 items-center justify-center rounded-2xl border border-white/10 bg-slate-900/60 text-xl transition hover:border-white/30 disabled:cursor-not-allowed disabled:opacity-40 sm:h-12 sm:w-12 sm:text-2xl"
           id="game-refresh"
           type="button"
           ${gameRefreshCooldown > 0 ? 'disabled' : ''}
