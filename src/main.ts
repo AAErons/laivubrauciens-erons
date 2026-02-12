@@ -18,6 +18,16 @@ declare global {
     galleryPrev?: () => void;
     galleryNext?: () => void;
     gallerySetIndex?: (index: number) => void;
+    openMemeForm?: () => void;
+    closeMemeForm?: () => void;
+    setMemeYear?: (year: number) => void;
+    selectMemeImage?: (url: string) => void;
+    updateMemeText?: (field: 'top' | 'bottom', value: string) => void;
+    updateMemeSize?: (field: 'top' | 'bottom', value: string) => void;
+    submitMeme?: () => void;
+    deleteMeme?: () => void;
+    openMemeGallery?: (index: number) => void;
+    closeMemeGallery?: () => void;
     startGame?: () => void;
     restartGame?: () => void;
     selectUpgrade?: (choice: UpgradeChoice) => void;
@@ -54,10 +64,20 @@ type TaskResult = {
   highScore?: number;
 };
 
+type MemeEntry = {
+  url: string;
+  topText: string;
+  bottomText: string;
+  topSize: number;
+  bottomSize: number;
+  createdAt: string;
+};
+
 const GOOGLE_CLIENT_ID = '230576623376-0gdvkur7dt49lea75pq9am271r6scjdq.apps.googleusercontent.com';
 const API_BASE_URL = import.meta.env.DEV
   ? import.meta.env.VITE_API_BASE_URL_DEV ?? 'http://localhost:3001'
   : import.meta.env.VITE_API_BASE_URL ?? '';
+const MEME_YEARS = [2020, 2021, 2022, 2023, 2024, 2025];
 
 const loadUser = (): UserProfile | null => {
   const stored = localStorage.getItem('boat_trip_user');
@@ -117,6 +137,30 @@ let firstTaskResults: TaskResult[] = [];
 let resultsLoaded = false;
 let highScoreResults: TaskResult[] = [];
 let highScoreLoaded = false;
+let memeFormOpen = false;
+let memeSelectedYear: number | null = null;
+let memePhotos: { url: string }[] = [];
+let memePhotosLoading = false;
+let memeSelectedUrl: string | null = null;
+let memeTopText = '';
+let memeBottomText = '';
+let memeTopSize = 28;
+let memeBottomSize = 28;
+let memeTopPos = { x: 0.5, y: 0.12 };
+let memeBottomPos = { x: 0.5, y: 0.88 };
+let memeDragTarget: 'top' | 'bottom' | null = null;
+let memeDragOffset = { x: 0, y: 0 };
+let memePreviewRect: DOMRect | null = null;
+let memeDragBound = false;
+let memeError: string | null = null;
+let memeSubmitting = false;
+let memesList: MemeEntry[] = [];
+let memesLoading = false;
+let memesLoaded = false;
+let memesError: string | null = null;
+let memeExisting: MemeEntry | null = null;
+let memeStatusLoaded = false;
+let memeGalleryOpenIndex: number | null = null;
 const GAME_SIZE = 5;
 const GAME_EMOJIS = ['⛵', '☀️', '🏖️', '🍺', '😊'];
 const UPGRADE_THRESHOLD = 20;
@@ -636,6 +680,7 @@ const pages: Record<string, string> = {
     </section>
   `,
   '/spele': '',
+  '/memes': '',
   '/dalibnieki': '',
   '/galerija': '',
   '/autentifikacija': '',
@@ -1001,6 +1046,291 @@ const spelePage = () => `
     </div>
   </section>
 `;
+
+const memesPage = () => {
+  const showForm = Boolean(currentUser) && memeFormOpen && !memeExisting;
+  const previewUrl = showForm ? memeSelectedUrl : null;
+  const topText = showForm ? memeTopText : '';
+  const bottomText = showForm ? memeBottomText : '';
+  const topSize = showForm ? memeTopSize : 28;
+  const bottomSize = showForm ? memeBottomSize : 28;
+  const safeTop = escapeHtml(topText);
+  const safeBottom = escapeHtml(bottomText);
+
+  return `
+    <section class="rounded-3xl border border-white/5 bg-white/5 p-8">
+      <div class="flex items-center justify-between gap-4">
+        <h2 class="text-xl font-semibold text-white">Memes</h2>
+        <div class="flex flex-wrap items-center gap-2">
+          ${
+            currentUser && !memeExisting && !memeFormOpen
+              ? `<button
+                  class="rounded-full border border-white/10 px-4 py-2 text-sm text-slate-200 transition hover:border-white/30"
+                  id="meme-open"
+                  type="button"
+                  onclick="window.openMemeForm && window.openMemeForm()"
+                >
+                  Izveidot meme
+                </button>`
+              : ''
+          }
+          ${
+            currentUser && memeExisting && !memeFormOpen
+              ? `<button
+                  class="rounded-full border border-rose-400/50 px-4 py-2 text-sm text-rose-200 transition hover:border-rose-300"
+                  type="button"
+                  onclick="window.deleteMeme && window.deleteMeme()"
+                >
+                  Dzēst meme
+                </button>`
+              : ''
+          }
+        </div>
+      </div>
+      ${
+        !currentUser
+          ? `<p class="mt-4 text-sm uppercase tracking-[0.25em] text-slate-300">
+              Ienāciet profilā, lai izveidotu meme
+            </p>`
+          : ''
+      }
+      ${
+        !memeFormOpen
+          ? `
+        <div class="mt-6 grid gap-4">
+          ${
+            memeExisting
+              ? `<p class="text-sm text-slate-300">Tu jau esi iesniedzis meme.</p>`
+              : ''
+          }
+          <div class="relative overflow-hidden rounded-3xl border border-white/10 bg-slate-950/40">
+            ${
+              memeGalleryOpenIndex !== null && memesList[memeGalleryOpenIndex]
+                ? `<img src="${escapeHtml(memesList[memeGalleryOpenIndex].url)}" alt="Meme" class="h-full w-full object-cover" />`
+                : memeExisting
+                  ? `<img src="${escapeHtml(memeExisting.url)}" alt="Meme" class="h-full w-full object-cover" />`
+                  : `<div class="flex h-56 items-center justify-center text-sm text-slate-500">Izvēlies meme no galerijas.</div>`
+            }
+          </div>
+        </div>
+      `
+          : ''
+      }
+      ${
+        showForm
+          ? `
+        <div class="mt-6 grid gap-6">
+          <div class="grid gap-2 text-sm text-slate-300">
+            <span class="text-xs uppercase tracking-[0.2em] text-slate-400">Izvēlies gadu</span>
+            <div class="flex flex-wrap gap-2">
+              ${MEME_YEARS.map(
+                (year) => `
+                <button
+                  class="rounded-full border px-3 py-1.5 text-xs uppercase tracking-[0.2em] transition ${
+                    memeSelectedYear === year ? 'border-emerald-400/70 text-emerald-200' : 'border-white/10 text-slate-200 hover:border-white/30'
+                  }"
+                  type="button"
+                  onclick="window.setMemeYear && window.setMemeYear(${year})"
+                >
+                  ${year}
+                </button>
+              `,
+              ).join('')}
+            </div>
+          </div>
+          <div class="grid gap-2 text-sm text-slate-300">
+            <span class="text-xs uppercase tracking-[0.2em] text-slate-400">Izvēlies attēlu</span>
+            ${
+              memePhotosLoading
+                ? `<p class="text-sm text-slate-400">Ielādējam bildes...</p>`
+                : memeSelectedYear === null
+                  ? `<p class="text-sm text-slate-400">Izvēlies gadu, lai redzētu bildes.</p>`
+                  : memePhotos.length === 0
+                    ? `<p class="text-sm text-slate-400">Šim gadam nav bilžu.</p>`
+                    : `
+                      <div class="grid grid-cols-2 gap-3 sm:grid-cols-3">
+                        ${memePhotos
+                          .map(
+                            (photo) => `
+                          <button
+                            class="overflow-hidden rounded-2xl border transition ${
+                              memeSelectedUrl === photo.url
+                                ? 'border-emerald-400/70'
+                                : 'border-white/10 hover:border-white/30'
+                            }"
+                            type="button"
+                            onclick="window.selectMemeImage && window.selectMemeImage('${escapeHtml(photo.url)}')"
+                          >
+                            <img src="${escapeHtml(photo.url)}" alt="Meme attēls" class="h-28 w-full object-cover" />
+                          </button>
+                        `,
+                          )
+                          .join('')}
+                      </div>
+                    `
+            }
+          </div>
+          <div class="grid gap-3 text-sm text-slate-300">
+            <label class="grid gap-2">
+              <span class="text-xs uppercase tracking-[0.2em] text-slate-400">Teksts augšā</span>
+              <input
+                class="rounded-2xl border border-white/10 bg-slate-950/60 px-4 py-3 text-sm text-slate-100 outline-none transition focus:border-white/30"
+                id="meme-top-text"
+                type="text"
+                maxlength="60"
+                value="${escapeHtml(memeTopText)}"
+                oninput="window.updateMemeText && window.updateMemeText('top', this.value)"
+              />
+              <div class="flex items-center gap-3 text-xs text-slate-400">
+                <span>Izmērs</span>
+                <button
+                  class="h-8 w-8 rounded-full border border-white/10 text-sm text-slate-200 transition hover:border-white/30"
+                  type="button"
+                  onclick="window.updateMemeSize && window.updateMemeSize('top', String(${memeTopSize} - 1))"
+                >
+                  −
+                </button>
+                <input
+                  class="w-16 rounded-full border border-white/10 bg-slate-950/60 px-2 py-1 text-center text-xs text-slate-100 outline-none transition focus:border-white/30"
+                  type="number"
+                  min="8"
+                  max="72"
+                  value="${memeTopSize}"
+                  oninput="window.updateMemeSize && window.updateMemeSize('top', this.value)"
+                />
+                <button
+                  class="h-8 w-8 rounded-full border border-white/10 text-sm text-slate-200 transition hover:border-white/30"
+                  type="button"
+                  onclick="window.updateMemeSize && window.updateMemeSize('top', String(${memeTopSize} + 1))"
+                >
+                  +
+                </button>
+                <span class="w-10 text-right">${memeTopSize}px</span>
+              </div>
+            </label>
+            <label class="grid gap-2">
+              <span class="text-xs uppercase tracking-[0.2em] text-slate-400">Teksts apakšā</span>
+              <input
+                class="rounded-2xl border border-white/10 bg-slate-950/60 px-4 py-3 text-sm text-slate-100 outline-none transition focus:border-white/30"
+                id="meme-bottom-text"
+                type="text"
+                maxlength="60"
+                value="${escapeHtml(memeBottomText)}"
+                oninput="window.updateMemeText && window.updateMemeText('bottom', this.value)"
+              />
+              <div class="flex items-center gap-3 text-xs text-slate-400">
+                <span>Izmērs</span>
+                <button
+                  class="h-8 w-8 rounded-full border border-white/10 text-sm text-slate-200 transition hover:border-white/30"
+                  type="button"
+                  onclick="window.updateMemeSize && window.updateMemeSize('bottom', String(${memeBottomSize} - 1))"
+                >
+                  −
+                </button>
+                <input
+                  class="w-16 rounded-full border border-white/10 bg-slate-950/60 px-2 py-1 text-center text-xs text-slate-100 outline-none transition focus:border-white/30"
+                  type="number"
+                  min="8"
+                  max="72"
+                  value="${memeBottomSize}"
+                  oninput="window.updateMemeSize && window.updateMemeSize('bottom', this.value)"
+                />
+                <button
+                  class="h-8 w-8 rounded-full border border-white/10 text-sm text-slate-200 transition hover:border-white/30"
+                  type="button"
+                  onclick="window.updateMemeSize && window.updateMemeSize('bottom', String(${memeBottomSize} + 1))"
+                >
+                  +
+                </button>
+                <span class="w-10 text-right">${memeBottomSize}px</span>
+              </div>
+            </label>
+          </div>
+          <div class="grid gap-3">
+            <span class="text-xs uppercase tracking-[0.2em] text-slate-400">Priekšskatījums</span>
+            <div class="relative overflow-hidden rounded-3xl border border-white/10 bg-slate-950/40" id="meme-preview">
+              ${
+                previewUrl
+                  ? `<img src="${escapeHtml(previewUrl)}" alt="Meme priekšskatījums" class="h-full w-full object-cover" />`
+                  : `<div class="flex h-52 items-center justify-center text-sm text-slate-500">Izvēlies attēlu</div>`
+              }
+              <div class="pointer-events-none absolute inset-0">
+                <div
+                  class="meme-draggable pointer-events-auto absolute select-none font-black uppercase text-white [text-shadow:0_2px_0_rgba(0,0,0,0.9),0_-2px_0_rgba(0,0,0,0.9),2px_0_0_rgba(0,0,0,0.9),-2px_0_0_rgba(0,0,0,0.9),2px_2px_0_rgba(0,0,0,0.9),-2px_2px_0_rgba(0,0,0,0.9),2px_-2px_0_rgba(0,0,0,0.9),-2px_-2px_0_rgba(0,0,0,0.9)] cursor-move"
+                  data-meme-text="top"
+                  style="font-size: ${topSize}px; left: ${Math.round(memeTopPos.x * 100)}%; top: ${Math.round(
+                    memeTopPos.y * 100,
+                  )}%; transform: translate(-50%, -50%);"
+                >
+                  ${safeTop}
+                </div>
+                <div
+                  class="meme-draggable pointer-events-auto absolute select-none font-black uppercase text-white [text-shadow:0_2px_0_rgba(0,0,0,0.9),0_-2px_0_rgba(0,0,0,0.9),2px_0_0_rgba(0,0,0,0.9),-2px_0_0_rgba(0,0,0,0.9),2px_2px_0_rgba(0,0,0,0.9),-2px_2px_0_rgba(0,0,0,0.9),2px_-2px_0_rgba(0,0,0,0.9),-2px_-2px_0_rgba(0,0,0,0.9)] cursor-move"
+                  data-meme-text="bottom"
+                  style="font-size: ${bottomSize}px; left: ${Math.round(memeBottomPos.x * 100)}%; top: ${Math.round(
+                    memeBottomPos.y * 100,
+                  )}%; transform: translate(-50%, -50%);"
+                >
+                  ${safeBottom}
+                </div>
+              </div>
+            </div>
+          </div>
+          ${
+            memeError ? `<p class="text-sm text-rose-300">${escapeHtml(memeError)}</p>` : ''
+          }
+          <div class="flex flex-wrap gap-3">
+            <button
+              class="rounded-full border border-white/10 px-5 py-2 text-sm text-slate-200 transition hover:border-white/30"
+              type="button"
+              onclick="window.closeMemeForm && window.closeMemeForm()"
+            >
+              Atcelt
+            </button>
+            <button
+              class="rounded-full border border-emerald-400/70 bg-emerald-400/10 px-5 py-2 text-sm text-emerald-200 transition hover:border-emerald-300 disabled:cursor-not-allowed disabled:opacity-60"
+              type="button"
+              ${memeSubmitting ? 'disabled' : ''}
+              onclick="window.submitMeme && window.submitMeme()"
+            >
+              ${memeSubmitting ? 'Saglabājam...' : 'Saglabāt meme'}
+            </button>
+          </div>
+        </div>
+      `
+          : ''
+      }
+      <div class="mt-8">
+        <h3 class="text-xs uppercase tracking-[0.3em] text-slate-400">Memes galerija</h3>
+        ${
+          memesLoading
+            ? `<p class="mt-4 text-sm text-slate-400">Ielādējam memes...</p>`
+            : memesError
+              ? `<p class="mt-4 text-sm text-rose-300">${escapeHtml(memesError)}</p>`
+              : memesList.length === 0
+                ? `<p class="mt-4 text-sm text-slate-400">Pagaidām nav meme.</p>`
+                : `
+                  <div class="mt-4 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+                    ${memesList
+                      .map(
+                        (meme, index) => `
+                      <button
+                        class="overflow-hidden rounded-3xl border border-white/10 bg-slate-950/40 transition hover:border-white/30"
+                        type="button"
+                        onclick="window.openMemeGallery && window.openMemeGallery(${index})"
+                      >
+                        <img src="${escapeHtml(meme.url)}" alt="Meme" class="h-full w-full object-cover" />
+                      </button>
+                    `,
+                      )
+                      .join('')}
+                  </div>
+                `
+        }
+      </div>
+    </section>
+  `;
+};
 
 const resultsPage = () => {
   const tab = getResultsRoute();
@@ -1530,6 +1860,28 @@ const render = () => {
     firstTaskLoading = false;
     firstTaskChecking = false;
     firstTaskError = null;
+    memeFormOpen = false;
+    memeSelectedYear = null;
+    memePhotos = [];
+    memePhotosLoading = false;
+    memeSelectedUrl = null;
+    memeTopText = '';
+    memeBottomText = '';
+    memeTopSize = 28;
+    memeBottomSize = 28;
+    memeTopPos = { x: 0.5, y: 0.12 };
+    memeBottomPos = { x: 0.5, y: 0.88 };
+    memeDragTarget = null;
+    memePreviewRect = null;
+    memeError = null;
+    memeSubmitting = false;
+    memeExisting = null;
+    memeStatusLoaded = false;
+    memesList = [];
+    memesLoading = false;
+    memesLoaded = false;
+    memesError = null;
+    memeGalleryOpenIndex = null;
   }
   const path = getRoute();
   const resolvedPath = !currentUser && path === '/profils' ? '/autentifikacija' : path;
@@ -1548,7 +1900,9 @@ const render = () => {
                 ? labiPage()
                 : resolvedPath === '/spele'
                   ? spelePage()
-                  : pages[resolvedPath] ?? pages['/'];
+                  : resolvedPath === '/memes'
+                    ? memesPage()
+                    : pages[resolvedPath] ?? pages['/'];
   const app = document.querySelector<HTMLDivElement>('#app');
   const profileLabel = currentUser ? 'Mans profils' : 'Ienākt profilā';
   const profileHref = currentUser ? '#/profils' : '#/autentifikacija';
@@ -1573,6 +1927,7 @@ const render = () => {
             <a class="transition hover:text-slate-50" href="#/apraksts">Apraksts</a>
             <a class="transition hover:text-slate-50" href="#/rezultati/pirmais">Rezultāti</a>
             <a class="transition hover:text-slate-50" href="#/spele">Spēle</a>
+            <a class="transition hover:text-slate-50" href="#/memes">Memes</a>
             <a
               class="rounded-full border border-slate-700/70 px-3 py-1.5 text-slate-100 transition hover:border-slate-500"
               href="${profileHref}"
@@ -1664,6 +2019,15 @@ const render = () => {
   }
   if (resolvedPath === '/galerija') {
     initGallery();
+  }
+  if (resolvedPath === '/memes') {
+    initMemes();
+    const memeOpen = document.getElementById('meme-open');
+    if (memeOpen) {
+      memeOpen.addEventListener('click', () => {
+        window.openMemeForm?.();
+      });
+    }
   }
   if (resolvedPath.startsWith('/rezultati')) {
     initResults();
@@ -2954,6 +3318,398 @@ window.closeGalleryView = () => {
   galleryPhotos = [];
   galleryActiveIndex = 0;
   render();
+};
+
+const fetchMemePhotos = (year: number) => {
+  memePhotosLoading = true;
+  memePhotos = [];
+  render();
+  fetch(`${API_BASE_URL}/photos?year=${year}`)
+    .then(async (response) => {
+      if (!response.ok) {
+        throw new Error('Failed to load photos');
+      }
+      const data = (await response.json()) as { photos: { url: string }[] };
+      memePhotos = data.photos ?? [];
+    })
+    .catch(() => {
+      memePhotos = [];
+    })
+    .finally(() => {
+      memePhotosLoading = false;
+      render();
+    });
+};
+
+function fetchMemesList() {
+  memesLoading = true;
+  memesError = null;
+  render();
+  fetch(`${API_BASE_URL}/memes`, { cache: 'no-store' })
+    .then(async (response) => {
+      if (!response.ok) {
+        throw new Error('Failed to load memes');
+      }
+      const data = (await response.json()) as { memes: MemeEntry[] };
+      memesList = data.memes ?? [];
+    })
+    .catch(() => {
+      memesError = 'Neizdevās ielādēt memes.';
+      memesList = [];
+    })
+    .finally(() => {
+      memesLoading = false;
+      memesLoaded = true;
+      render();
+    });
+}
+
+function fetchMyMeme() {
+  if (!authToken) {
+    memeExisting = null;
+    memeStatusLoaded = true;
+    render();
+    return;
+  }
+  fetch(`${API_BASE_URL}/memes/me`, {
+    headers: {
+      Authorization: `Bearer ${authToken}`,
+    },
+    cache: 'no-store',
+  })
+    .then(async (response) => {
+      if (!response.ok) {
+        throw new Error('Failed to load meme');
+      }
+      const data = (await response.json()) as { meme: MemeEntry | null };
+      memeExisting = data.meme ?? null;
+    })
+    .catch(() => {
+      memeExisting = null;
+    })
+    .finally(() => {
+      memeStatusLoaded = true;
+      render();
+    });
+}
+
+function initMemes() {
+  if (!memesLoaded && !memesLoading) {
+    fetchMemesList();
+  }
+  if (currentUser && !memeStatusLoaded) {
+    fetchMyMeme();
+  }
+  if (!memeDragBound) {
+    memeDragBound = true;
+    document.addEventListener('pointerdown', (event) => {
+      if (!memeFormOpen) {
+        return;
+      }
+      const target = (event.target as HTMLElement | null)?.closest?.('[data-meme-text]') as
+        | HTMLElement
+        | null;
+      if (!target) {
+        return;
+      }
+      const preview = document.getElementById('meme-preview');
+      if (!preview) {
+        return;
+      }
+      const textKey = target.getAttribute('data-meme-text') as 'top' | 'bottom' | null;
+      if (!textKey) {
+        return;
+      }
+      memePreviewRect = preview.getBoundingClientRect();
+      memeDragTarget = textKey;
+      const pos = textKey === 'top' ? memeTopPos : memeBottomPos;
+      const currentX = memePreviewRect.left + memePreviewRect.width * pos.x;
+      const currentY = memePreviewRect.top + memePreviewRect.height * pos.y;
+      memeDragOffset = {
+        x: (event as PointerEvent).clientX - currentX,
+        y: (event as PointerEvent).clientY - currentY,
+      };
+      (target as HTMLElement).setPointerCapture?.((event as PointerEvent).pointerId);
+    });
+
+    window.addEventListener('pointermove', (event) => {
+      if (!memeDragTarget || !memePreviewRect) {
+        return;
+      }
+      const nextX =
+        ((event as PointerEvent).clientX - memeDragOffset.x - memePreviewRect.left) /
+        memePreviewRect.width;
+      const nextY =
+        ((event as PointerEvent).clientY - memeDragOffset.y - memePreviewRect.top) /
+        memePreviewRect.height;
+      const clampedX = Math.max(0, Math.min(1, nextX));
+      const clampedY = Math.max(0, Math.min(1, nextY));
+      if (memeDragTarget === 'top') {
+        memeTopPos = { x: clampedX, y: clampedY };
+      } else {
+        memeBottomPos = { x: clampedX, y: clampedY };
+      }
+      render();
+    });
+
+    window.addEventListener('pointerup', () => {
+      memeDragTarget = null;
+      memePreviewRect = null;
+    });
+  }
+}
+
+const createMemeImageBase64 = async (
+  imageUrl: string,
+  topText: string,
+  bottomText: string,
+  topSize: number,
+  bottomSize: number,
+  topPos: { x: number; y: number },
+  bottomPos: { x: number; y: number },
+) => {
+  const img = new Image();
+  img.crossOrigin = 'anonymous';
+  img.src = imageUrl;
+  await new Promise<void>((resolve, reject) => {
+    img.onload = () => resolve();
+    img.onerror = () => reject(new Error('Image load failed'));
+  });
+  const canvas = document.createElement('canvas');
+  canvas.width = img.naturalWidth || img.width;
+  canvas.height = img.naturalHeight || img.height;
+  const ctx = canvas.getContext('2d');
+  if (!ctx) {
+    throw new Error('Canvas not supported');
+  }
+  ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+
+  const sizeScale = canvas.width / 600;
+  const drawText = (text: string, size: number, x: number, y: number) => {
+    if (!text) {
+      return;
+    }
+    const scaledSize = Math.max(12, Math.round(size * sizeScale));
+    ctx.font = `900 ${scaledSize}px Impact, Arial Black, sans-serif`;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.lineWidth = Math.max(2, Math.round(scaledSize / 10));
+    ctx.strokeStyle = 'black';
+    ctx.fillStyle = 'white';
+    ctx.strokeText(text, x, y);
+    ctx.fillText(text, x, y);
+  };
+
+  const topX = canvas.width * topPos.x;
+  const topY = canvas.height * topPos.y;
+  const bottomX = canvas.width * bottomPos.x;
+  const bottomY = canvas.height * bottomPos.y;
+  drawText(topText.toUpperCase(), topSize, topX, topY);
+  drawText(bottomText.toUpperCase(), bottomSize, bottomX, bottomY);
+
+  return canvas.toDataURL('image/jpeg', 0.92);
+};
+
+window.openMemeForm = () => {
+  if (!currentUser) {
+    return;
+  }
+  if (memeExisting) {
+    return;
+  }
+  memeFormOpen = true;
+  memeTopPos = { x: 0.5, y: 0.12 };
+  memeBottomPos = { x: 0.5, y: 0.88 };
+  memeError = null;
+  render();
+};
+
+window.deleteMeme = () => {
+  if (!currentUser || !memeExisting || memeSubmitting) {
+    return;
+  }
+  memeSubmitting = true;
+  memeError = null;
+  render();
+  fetch(`${API_BASE_URL}/memes/me`, {
+    method: 'DELETE',
+    headers: {
+      Authorization: `Bearer ${authToken ?? ''}`,
+    },
+  })
+    .then(async (response) => {
+      if (!response.ok) {
+        throw new Error('Delete failed');
+      }
+      memeExisting = null;
+      memeFormOpen = false;
+      memeSelectedYear = null;
+      memePhotos = [];
+      memePhotosLoading = false;
+      memeSelectedUrl = null;
+      memeTopText = '';
+      memeBottomText = '';
+      memeTopSize = 28;
+      memeBottomSize = 28;
+      memeTopPos = { x: 0.5, y: 0.12 };
+      memeBottomPos = { x: 0.5, y: 0.88 };
+      memesLoaded = false;
+      fetchMemesList();
+    })
+    .catch(() => {
+      memeError = 'Neizdevās dzēst meme.';
+    })
+    .finally(() => {
+      memeSubmitting = false;
+      render();
+    });
+};
+
+window.openMemeGallery = (index: number) => {
+  if (Number.isNaN(index) || index < 0 || index >= memesList.length) {
+    return;
+  }
+  memeGalleryOpenIndex = index;
+  render();
+};
+
+window.closeMemeGallery = () => {
+  memeGalleryOpenIndex = null;
+  render();
+};
+
+window.closeMemeForm = () => {
+  memeFormOpen = false;
+  memeSelectedYear = null;
+  memePhotos = [];
+  memePhotosLoading = false;
+  memeSelectedUrl = null;
+  memeTopText = '';
+  memeBottomText = '';
+  memeTopSize = 28;
+  memeBottomSize = 28;
+  memeTopPos = { x: 0.5, y: 0.12 };
+  memeBottomPos = { x: 0.5, y: 0.88 };
+  memeDragTarget = null;
+  memePreviewRect = null;
+  memeError = null;
+  render();
+};
+
+window.setMemeYear = (year: number) => {
+  if (Number.isNaN(year)) {
+    return;
+  }
+  memeSelectedYear = year;
+  memeSelectedUrl = null;
+  memeError = null;
+  fetchMemePhotos(year);
+};
+
+window.selectMemeImage = (url: string) => {
+  memeSelectedUrl = url;
+  memeError = null;
+  render();
+};
+
+window.updateMemeText = (field: 'top' | 'bottom', value: string) => {
+  const active = document.activeElement as HTMLInputElement | null;
+  const activeId = active?.id;
+  const caret = active?.selectionStart ?? null;
+  if (field === 'top') {
+    memeTopText = value.slice(0, 60);
+  } else {
+    memeBottomText = value.slice(0, 60);
+  }
+  render();
+  if (activeId === 'meme-top-text' || activeId === 'meme-bottom-text') {
+    const input = document.getElementById(activeId) as HTMLInputElement | null;
+    if (input) {
+      input.focus();
+      if (caret !== null) {
+        input.setSelectionRange(caret, caret);
+      }
+    }
+  }
+};
+
+window.updateMemeSize = (field: 'top' | 'bottom', value: string) => {
+  const size = Math.max(8, Math.min(72, Number(value) || 28));
+  if (field === 'top') {
+    memeTopSize = size;
+  } else {
+    memeBottomSize = size;
+  }
+  render();
+};
+
+window.submitMeme = () => {
+  if (!currentUser) {
+    return;
+  }
+  if (memeExisting || memeSubmitting) {
+    return;
+  }
+  if (!memeSelectedUrl || memeSelectedYear === null) {
+    memeError = 'Izvēlies attēlu.';
+    render();
+    return;
+  }
+  memeSubmitting = true;
+  memeError = null;
+  render();
+  createMemeImageBase64(
+    memeSelectedUrl,
+    memeTopText.trim(),
+    memeBottomText.trim(),
+    memeTopSize,
+    memeBottomSize,
+    memeTopPos,
+    memeBottomPos,
+  )
+    .then((imageBase64) =>
+      fetch(`${API_BASE_URL}/memes`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${authToken ?? ''}`,
+        },
+        body: JSON.stringify({
+          imageBase64,
+          topText: memeTopText.trim(),
+          bottomText: memeBottomText.trim(),
+          topSize: memeTopSize,
+          bottomSize: memeBottomSize,
+        }),
+      }),
+    )
+    .then(async (response) => {
+      if (!response.ok) {
+        throw new Error('Meme create failed');
+      }
+      const data = (await response.json()) as { meme: MemeEntry | null };
+      memeExisting = data.meme ?? null;
+      memeFormOpen = false;
+      memeSelectedYear = null;
+      memePhotos = [];
+      memePhotosLoading = false;
+      memeSelectedUrl = null;
+      memeTopText = '';
+      memeBottomText = '';
+      memeTopSize = 28;
+      memeBottomSize = 28;
+      memeTopPos = { x: 0.5, y: 0.12 };
+      memeBottomPos = { x: 0.5, y: 0.88 };
+      memesLoaded = false;
+      fetchMemesList();
+    })
+    .catch(() => {
+      memeError = 'Neizdevās saglabāt meme.';
+    })
+    .finally(() => {
+      memeSubmitting = false;
+      render();
+    });
 };
 
 window.submitGalleryUpload = () => {

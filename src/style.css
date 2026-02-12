@@ -190,6 +190,10 @@
     touch-action: none;
   }
 
+  .meme-draggable {
+    touch-action: none;
+  }
+
   .bomb-fly {
     @apply pointer-events-none fixed z-50 flex h-8 w-8 items-center justify-center;
     font-size: 24px;
