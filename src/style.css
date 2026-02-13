@@ -133,6 +133,11 @@
     touch-action: none;
   }
 
+  .game-grid--insanity {
+    box-shadow: 0 0 18px rgba(192, 38, 211, 0.35), 0 0 40px rgba(217, 70, 239, 0.25);
+    border-color: rgba(217, 70, 239, 0.4);
+  }
+
   .game-tile {
     @apply flex aspect-square items-center justify-center rounded-2xl border border-white/10 bg-slate-900/70 text-2xl transition;
     --drag-x: 0px;

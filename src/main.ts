@@ -168,19 +168,55 @@ const EMOJI_THEMES: Record<string, string[]> = {
   laivu: ['⛵', '☀️', '🏖️', '🍺', '😊'],
   auglisi: ['🍎', '🍊', '🍋', '🍇', '🍉'],
 };
-const UPGRADE_THRESHOLD = 20;
-const UPGRADE_POOL = ['time', 'multiplier', 'refresh', 'bomb', 'crystal'] as const;
+const UPGRADE_POOLS = [
+  ['time', 'multiplier', 'bomb', 'crystal', 'combo', 'insanity'],
+  ['time', 'multiplier', 'bomb', 'crystal', 'combo', 'insanity'],
+  ['time', 'multiplier', 'bomb', 'crystal', 'combo', 'insanity', 'refresh'],
+] as const;
 const UPGRADE_THRESHOLDS = [250, 750, 2000];
 const UPGRADE_LABELS: Array<Record<UpgradeChoice, string>> = [
-  { time: '+10s', multiplier: '×2', refresh: '-3s', bomb: '+5%', crystal: '+2%' },
-  { time: '+30s', multiplier: '×3', refresh: '-6s', bomb: '+15%', crystal: '+5%' },
-  { time: '+60s', multiplier: '×4', refresh: '0s', bomb: '+35%', crystal: '+20%' },
+  {
+    time: '+20s',
+    multiplier: '+x2',
+    bomb: '+7%',
+    crystal: '+5%',
+    combo: '-2',
+    insanity: '+1s',
+    refresh: '0s',
+  },
+  {
+    time: '+45s',
+    multiplier: '+x2',
+    bomb: '+20%',
+    crystal: '+12%',
+    combo: '-3',
+    insanity: '+2s',
+    refresh: '0s',
+  },
+  {
+    time: '+90s',
+    multiplier: '+x3',
+    bomb: '+40%',
+    crystal: '+30%',
+    combo: '-5',
+    insanity: '+3s',
+    refresh: '0s',
+  },
 ];
-type UpgradeChoice = (typeof UPGRADE_POOL)[number];
+const UPGRADE_TIERS = [
+  { time: 20, multiplier: 2, bomb: 0.07, crystal: 0.05, combo: 2, insanity: 1000, refresh: false },
+  { time: 45, multiplier: 2, bomb: 0.2, crystal: 0.12, combo: 3, insanity: 2000, refresh: false },
+  { time: 90, multiplier: 3, bomb: 0.4, crystal: 0.3, combo: 5, insanity: 3000, refresh: false },
+] as const;
+type UpgradeChoice = (typeof UPGRADE_POOLS)[number][number];
 const gameAudio = new Audio('/background.mp3');
 gameAudio.loop = true;
 const swipeAudio = new Audio('/swipe.wav');
 const explosionAudio = new Audio('/explosion.wav');
+const insanityAudio = new Audio('/insanity.wav');
+insanityAudio.loop = false;
+const bombAudio = new Audio('/bomb.wav');
+const crystalAudio = new Audio('/crystal.wav');
 let gameGrid: string[] = [];
 let gameDraggingIndex: number | null = null;
 let gameDragTargetIndex: number | null = null;
@@ -194,18 +230,17 @@ let gameBombExplosionIndices = new Set<number>();
 let gameCrystalExplosionIndices = new Set<number>();
 let gameAnimating = false;
 let gameFalling = false;
-let gamePendingMatchTimer: number | null = null;
-let gamePredicting = false;
-let gamePendingServerState: GameState | null = null;
 let gamePredictionTimers: number[] = [];
 let gameAudioStarted = false;
 let gameAudioMuted = false;
 let gameAudioVolume = 0.35;
+let insanityActiveClient = false;
 let gameFallingIndices = new Set<number>();
-let gameRefreshBase = 10;
-let gameRefreshCooldown = 10;
+let gameRefreshBase = 5;
+let gameRefreshCooldown = 5;
 let gameRefreshTimerId: number | null = null;
 let gameTimeLeft = 60;
+let gameDurationSeconds = 60;
 let gameTimerId: number | null = null;
 let gameScore = 0;
 let gameStarted = false;
@@ -221,17 +256,30 @@ let gameBombs = 0;
 let gameBombDragging = false;
 let gameBombDragPos = { x: 0, y: 0 };
 let gameBombTargetIndex: number | null = null;
-let gamePendingBombState: GameState | null = null;
 let gameBombDropChance = 0;
 let gameCrystalDropChance = 0;
 let gameUpgradeChoices: UpgradeChoice[] = [];
 let gameUpgradeTier = -1;
+let gameUpgradeIndex = 0;
 let gameCrystals = 0;
 let gameCrystalDragging = false;
 let gameCrystalDragPos = { x: 0, y: 0 };
 let gameCrystalTargetIndex: number | null = null;
 let gameSessionLoaded = false;
-let gameNetworkBusy = false;
+let gameComboCount = 0;
+let gameInsanityUntil: Date | null = null;
+let gameComboFlash = 0;
+let gameComboFlashTimer: number | null = null;
+let gameComboFlashTimers: number[] = [];
+let gameComboLastAt: number | null = null;
+let gameComboWindowMs = 2000;
+let gameComboTarget = 20;
+let gameInsanityDurationMs = 4000;
+let gameComboFlashPos = { x: 50, y: 50 };
+let gameComboResetFlash = false;
+let gameComboResetTimer: number | null = null;
+let gameComboPauseRemainingMs: number | null = null;
+let gameInsanityPauseRemainingMs: number | null = null;
 let gamePointerUpBound = false;
 let gameStartBound = false;
 let gameUpgradeBound = false;
@@ -799,6 +847,7 @@ const formatParticipantName = (user: TaskResult) => {
 
 const spelePage = () => {
   const scoreEmoji = getActiveEmojiSet()[0];
+  const insanityActive = gameInsanityUntil ? Date.now() <= gameInsanityUntil.getTime() : false;
   return `
   <section class="rounded-3xl border border-white/5 bg-white/5 p-8">
     <div class="flex flex-col gap-6">
@@ -868,39 +917,61 @@ const spelePage = () => {
               ></div>
             </div>
           </div>
-          <div
-            class="game-grid grid w-full grid-cols-5 gap-2 rounded-3xl border border-white/10 bg-slate-950/40 p-4"
-            id="game-grid"
-          >
-          ${gameGrid
-            .map((emoji, index) => {
-              const isDragging = gameDraggingIndex === index;
-              const isTarget = gameDragTargetIndex === index && gameDraggingIndex !== null;
-              const dragStyle = isDragging
-                ? `style="--drag-x: ${gameDragOffset.x}px; --drag-y: ${gameDragOffset.y}px;"`
-                : '';
-              return `
-                <button
-                  class="game-tile ${isDragging ? 'game-tile--dragging' : ''} ${
-                    isTarget ? 'game-tile--target' : ''
-                  } ${gameClearingIndices.has(index) ? 'game-tile--clearing' : ''} ${
-                    gameFallingIndices.has(index) ? 'game-tile--fall' : ''
-                  } ${gameBombTargetIndex === index ? 'game-tile--bomb-target' : ''} ${
-                    gameCrystalTargetIndex === index ? 'game-tile--crystal-target' : ''
-                  } ${gameBombExplosionIndices.has(index) ? 'game-tile--bomb-explode' : ''} ${
-                    gameCrystalExplosionIndices.has(index) ? 'game-tile--crystal-explode' : ''
-                  }
-                  }"
-                  data-game-index="${index}"
-                  type="button"
-                  aria-label="Spēles lauciņš"
-                  ${dragStyle}
-                >
-                  ${emoji}
-                </button>
-              `;
-            })
-            .join('')}
+          <div class="relative">
+            <div
+              class="game-grid grid w-full grid-cols-5 gap-2 rounded-3xl border border-white/10 bg-slate-950/40 p-4 ${
+                insanityActive ? 'game-grid--insanity' : ''
+              }"
+              id="game-grid"
+            >
+            ${gameGrid
+              .map((emoji, index) => {
+                const isDragging = gameDraggingIndex === index;
+                const isTarget = gameDragTargetIndex === index && gameDraggingIndex !== null;
+                const dragStyle = isDragging
+                  ? `style="--drag-x: ${gameDragOffset.x}px; --drag-y: ${gameDragOffset.y}px;"`
+                  : '';
+                return `
+                  <button
+                    class="game-tile ${isDragging ? 'game-tile--dragging' : ''} ${
+                      isTarget ? 'game-tile--target' : ''
+                    } ${gameClearingIndices.has(index) ? 'game-tile--clearing' : ''} ${
+                      gameFallingIndices.has(index) ? 'game-tile--fall' : ''
+                    } ${gameBombTargetIndex === index ? 'game-tile--bomb-target' : ''} ${
+                      gameCrystalTargetIndex === index ? 'game-tile--crystal-target' : ''
+                    } ${gameBombExplosionIndices.has(index) ? 'game-tile--bomb-explode' : ''} ${
+                      gameCrystalExplosionIndices.has(index) ? 'game-tile--crystal-explode' : ''
+                    }
+                    }"
+                    data-game-index="${index}"
+                    type="button"
+                    aria-label="Spēles lauciņš"
+                    ${dragStyle}
+                  >
+                    ${emoji}
+                  </button>
+                `;
+              })
+              .join('')}
+            </div>
+            ${
+              gameComboFlash > 0
+                ? `<div
+                    class="pointer-events-none absolute z-20 -translate-x-1/2 -translate-y-1/2 font-black uppercase tracking-[0.2em] ${
+                      gameComboResetFlash ? 'text-rose-300' : 'text-emerald-300'
+                    } ${
+                      gameComboResetFlash
+                        ? 'drop-shadow-[0_6px_18px_rgba(244,114,182,0.5)]'
+                        : 'drop-shadow-[0_6px_18px_rgba(16,185,129,0.55)]'
+                    } animate-pulse"
+                    style="left: ${gameComboFlashPos.x}%; top: ${gameComboFlashPos.y}%; font-size: ${
+                      gameComboResetFlash ? 20 : 18 + gameComboFlash * 3
+                    }px;"
+                  >
+                    ${gameComboResetFlash ? 'kombo salauzts' : `x${gameComboFlash}`}
+                  </div>`
+                : ''
+            }
           </div>
         </div>
         ${
@@ -952,11 +1023,15 @@ const spelePage = () => {
                           ? '⏱️'
                           : choice === 'multiplier'
                             ? '⭐'
-                            : choice === 'refresh'
-                              ? '🔄'
-                              : choice === 'bomb'
-                                ? '💣'
-                                : '💎'
+                            : choice === 'bomb'
+                              ? '💣'
+                              : choice === 'crystal'
+                                ? '💎'
+                                : choice === 'combo'
+                                  ? '🎯'
+                                  : choice === 'insanity'
+                                    ? '⚡'
+                                    : '🔄'
                       }</span>
                       <span class="text-xs text-slate-300 sm:text-sm">${getUpgradeLabel(choice)}</span>
                     </button>
@@ -1504,6 +1579,21 @@ const getMatchRuns = (grid: string[]) => {
   return { matches, runs };
 };
 
+const expandInsanityMatches = (matches: Set<number>) => {
+  const expanded = new Set<number>(matches);
+  matches.forEach((index) => {
+    const row = Math.floor(index / GAME_SIZE);
+    const col = index % GAME_SIZE;
+    for (let c = 0; c < GAME_SIZE; c += 1) {
+      expanded.add(row * GAME_SIZE + c);
+    }
+    for (let r = 0; r < GAME_SIZE; r += 1) {
+      expanded.add(r * GAME_SIZE + col);
+    }
+  });
+  return expanded;
+};
+
 const collapseGrid = (grid: string[]) => {
   const filled = new Set<number>();
   for (let col = 0; col < GAME_SIZE; col += 1) {
@@ -1543,9 +1633,18 @@ const applyScore = (points: number) => {
     return;
   }
   const nextScore = gameScore + points;
-  if (nextScore >= UPGRADE_THRESHOLD && gameScore < UPGRADE_THRESHOLD && !gameUpgradePending) {
+  const nextThreshold = UPGRADE_THRESHOLDS[gameUpgradeIndex];
+  if (
+    !gameUpgradePending &&
+    nextThreshold !== undefined &&
+    nextScore >= nextThreshold &&
+    gameScore < nextThreshold
+  ) {
     gameUpgradePending = true;
+    gameUpgradeTier = gameUpgradeIndex;
     gameUpgradeChoices = pickUpgradeChoices();
+    gameUpgradeIndex = Math.min(gameUpgradeIndex + 1, UPGRADE_THRESHOLDS.length);
+    pauseForUpgrade();
     if (gameTimerId) {
       window.clearInterval(gameTimerId);
       gameTimerId = null;
@@ -1559,8 +1658,162 @@ const applyScore = (points: number) => {
   }, 500);
 };
 
+const triggerComboFlash = (from: number, to: number) => {
+  if (to <= from) {
+    return;
+  }
+  if (gameComboFlashTimer) {
+    window.clearTimeout(gameComboFlashTimer);
+    gameComboFlashTimer = null;
+  }
+  gameComboFlashTimers.forEach((timerId) => window.clearTimeout(timerId));
+  gameComboFlashTimers = [];
+  const delta = to - from;
+  for (let step = 1; step <= delta; step += 1) {
+    const value = from + step;
+    const timerId = window.setTimeout(() => {
+      const randomX = 15 + Math.random() * 70;
+      const randomY = 15 + Math.random() * 70;
+      gameComboFlashPos = { x: randomX, y: randomY };
+      gameComboFlash = value;
+      render();
+      if (step === delta) {
+        if (gameComboFlashTimer) {
+          window.clearTimeout(gameComboFlashTimer);
+        }
+        gameComboFlashTimer = window.setTimeout(() => {
+          gameComboFlash = 0;
+          gameComboResetFlash = false;
+          gameComboFlashTimer = null;
+          render();
+        }, 450);
+      }
+    }, (step - 1) * 180);
+    gameComboFlashTimers.push(timerId);
+  }
+};
+
+const syncInsanityAudio = () => {
+  const isActive = gameInsanityUntil ? Date.now() <= gameInsanityUntil.getTime() : false;
+  if (isActive && !insanityActiveClient) {
+    insanityActiveClient = true;
+    insanityAudio.currentTime = 0;
+    insanityAudio.volume = gameAudioMuted ? 0 : Math.min(1, gameAudioVolume);
+    insanityAudio.muted = gameAudioMuted;
+    insanityAudio.play().catch(() => {});
+    gameAudio.volume = gameAudioMuted ? 0 : Math.max(0.1, gameAudioVolume * 0.4);
+  } else if (!isActive && insanityActiveClient) {
+    insanityActiveClient = false;
+    insanityAudio.pause();
+    insanityAudio.currentTime = 0;
+    gameAudio.volume = gameAudioMuted ? 0 : gameAudioVolume;
+  }
+};
+
+const pauseForUpgrade = () => {
+  if (!gameUpgradePending) {
+    return;
+  }
+  if (gameTimerId) {
+    window.clearInterval(gameTimerId);
+    gameTimerId = null;
+  }
+  if (gameRefreshTimerId) {
+    window.clearInterval(gameRefreshTimerId);
+    gameRefreshTimerId = null;
+  }
+  if (gameComboResetTimer) {
+    window.clearTimeout(gameComboResetTimer);
+    gameComboResetTimer = null;
+  }
+  if (gameComboLastAt) {
+    gameComboPauseRemainingMs = Math.max(0, gameComboWindowMs - (Date.now() - gameComboLastAt));
+  }
+  if (gameInsanityUntil && Date.now() <= gameInsanityUntil.getTime()) {
+    gameInsanityPauseRemainingMs = Math.max(0, gameInsanityUntil.getTime() - Date.now());
+  }
+  gameInsanityUntil = null;
+  syncInsanityAudio();
+};
+
+const resumeFromUpgrade = () => {
+  if (gameComboPauseRemainingMs !== null) {
+    const remaining = Math.max(0, gameComboPauseRemainingMs);
+    gameComboLastAt = Date.now() - (gameComboWindowMs - remaining);
+    gameComboPauseRemainingMs = null;
+  }
+  if (gameInsanityPauseRemainingMs !== null) {
+    if (gameInsanityPauseRemainingMs > 0) {
+      gameInsanityUntil = new Date(Date.now() + gameInsanityPauseRemainingMs);
+      syncInsanityAudio();
+    }
+    gameInsanityPauseRemainingMs = null;
+  }
+};
+
+const applyLocalCombo = (matchesCount: number) => {
+  if (matchesCount <= 0) {
+    return;
+  }
+  const now = Date.now();
+  if (gameInsanityUntil && now > gameInsanityUntil.getTime()) {
+    gameInsanityUntil = null;
+    gameComboCount = 0;
+    gameComboLastAt = null;
+    syncInsanityAudio();
+  }
+  if (gameInsanityUntil && now <= gameInsanityUntil.getTime()) {
+    if (gameComboCount !== 1) {
+      gameComboCount = 1;
+      gameComboResetFlash = true;
+      triggerComboFlash(0, 1);
+    }
+    gameComboLastAt = now;
+    return;
+  }
+  const previous = gameComboCount;
+  if (!gameComboLastAt || now - gameComboLastAt > gameComboWindowMs) {
+    gameComboCount = 0;
+  }
+  gameComboCount += matchesCount;
+  gameComboLastAt = now;
+  if (gameComboResetTimer) {
+    window.clearTimeout(gameComboResetTimer);
+    gameComboResetTimer = null;
+  }
+  gameComboResetTimer = window.setTimeout(() => {
+    if (!gameComboLastAt || Date.now() - gameComboLastAt >= gameComboWindowMs) {
+      gameComboResetFlash = true;
+      gameComboFlashPos = { x: 15 + Math.random() * 70, y: 15 + Math.random() * 70 };
+      gameComboFlash = 1;
+      render();
+      if (gameComboFlashTimer) {
+        window.clearTimeout(gameComboFlashTimer);
+      }
+      gameComboFlashTimer = window.setTimeout(() => {
+        gameComboFlash = 0;
+        gameComboResetFlash = false;
+        gameComboFlashTimer = null;
+        render();
+      }, 450);
+    }
+  }, gameComboWindowMs);
+  if (gameComboCount >= gameComboTarget) {
+    gameComboCount = 1;
+    gameInsanityUntil = new Date(now + gameInsanityDurationMs);
+    syncInsanityAudio();
+  }
+  if (previous > 1 && gameComboCount === 1) {
+    gameComboResetFlash = true;
+  } else if (gameComboCount > 0 && previous !== gameComboCount) {
+    gameComboResetFlash = false;
+  }
+  triggerComboFlash(previous, gameComboCount);
+};
+
 const pickUpgradeChoices = (): UpgradeChoice[] => {
-  const shuffled = [...UPGRADE_POOL].sort(() => Math.random() - 0.5);
+  const pool = UPGRADE_POOLS[gameUpgradeTier] ?? UPGRADE_POOLS[0];
+  const shuffled = [...pool].sort(() => Math.random() - 0.5);
   return shuffled.slice(0, 3);
 };
 
@@ -1607,57 +1860,6 @@ const swapGridIndices = (grid: string[], from: number, to: number) => {
 const clearPredictionTimers = () => {
   gamePredictionTimers.forEach((timerId) => window.clearTimeout(timerId));
   gamePredictionTimers = [];
-};
-
-const resolveMatchesPreview = () => {
-  if (gameAnimating) {
-    return;
-  }
-  const { matches } = getMatchRuns(gameGrid);
-  if (matches.size === 0) {
-    return;
-  }
-  gameAnimating = true;
-  gamePredicting = true;
-  gameClearingIndices = new Set(matches);
-  explosionAudio.currentTime = 0;
-  explosionAudio.volume = 0.7;
-  explosionAudio.muted = gameAudioMuted;
-  explosionAudio.play().catch(() => {});
-  render();
-
-  clearPredictionTimers();
-  gamePredictionTimers.push(
-    window.setTimeout(() => {
-      matches.forEach((index) => {
-        gameGrid[index] = '';
-      });
-      const filled = collapseGrid(gameGrid);
-      gameClearingIndices = new Set();
-      gameFalling = true;
-      gameFallingIndices = filled;
-      render();
-
-      gamePredictionTimers.push(
-        window.setTimeout(() => {
-          gameFalling = false;
-          gameFallingIndices = new Set();
-          render();
-          gameAnimating = false;
-          if (getMatchRuns(gameGrid).matches.size > 0) {
-            resolveMatchesPreview();
-            return;
-          }
-          gamePredicting = false;
-          if (gamePendingServerState) {
-            const nextState = gamePendingServerState;
-            gamePendingServerState = null;
-            applyGameState(nextState);
-          }
-        }, 320),
-      );
-    }, 200),
-  );
 };
 
 const getBombIndices = (index: number) => {
@@ -1707,60 +1909,107 @@ const triggerCrystalExplosion = (index: number) => {
   }, 200);
 };
 
-const applyBombAt = async (index: number) => {
-  if (gameNetworkBusy) {
+const applyBombAt = (index: number) => {
+  if (gameBombs <= 0) {
     return;
   }
-  const state = await sendGameAction('/game/bomb', { index });
-  if (state) {
-    gamePendingBombState = state;
-    triggerBombExplosion(index);
-    window.setTimeout(() => {
-      if (gamePendingBombState) {
-        applyGameState(gamePendingBombState);
-        gamePendingBombState = null;
-      }
-    }, 200);
-  }
+  bombAudio.currentTime = 0;
+  bombAudio.volume = 0.7;
+  bombAudio.muted = gameAudioMuted;
+  bombAudio.play().catch(() => {});
+  gameBombs = Math.max(0, gameBombs - 1);
+  triggerBombExplosion(index);
+  const indices = getBombIndices(index);
+  indices.forEach((idx) => {
+    gameGrid[idx] = '';
+  });
+  applyScore(Math.round(50 * gameScoreMultiplier));
+  const filled = collapseGrid(gameGrid);
+  gameFalling = true;
+  gameFallingIndices = filled;
+  render();
+  window.setTimeout(() => {
+    gameFalling = false;
+    gameFallingIndices = new Set();
+    render();
+    resolveMatchesAnimated(false);
+  }, 320);
 };
 
-const applyCrystalAt = async (index: number) => {
-  if (gameNetworkBusy) {
+const applyCrystalAt = (index: number) => {
+  if (gameCrystals <= 0) {
     return;
   }
-  const state = await sendGameAction('/game/crystal', { index });
-  if (state) {
-    triggerCrystalExplosion(index);
-    window.setTimeout(() => {
-      applyGameState(state);
-    }, 200);
+  const target = gameGrid[index];
+  if (!target) {
+    return;
   }
+  crystalAudio.currentTime = 0;
+  crystalAudio.volume = 0.7;
+  crystalAudio.muted = gameAudioMuted;
+  crystalAudio.play().catch(() => {});
+  gameCrystals = Math.max(0, gameCrystals - 1);
+  triggerCrystalExplosion(index);
+  const indices = gameGrid
+    .map((value, idx) => (value === target ? idx : -1))
+    .filter((idx) => idx >= 0);
+  indices.forEach((idx) => {
+    gameGrid[idx] = '';
+  });
+  applyScore(Math.round(indices.length * 10 * gameScoreMultiplier));
+  const filled = collapseGrid(gameGrid);
+  gameFalling = true;
+  gameFallingIndices = filled;
+  render();
+  window.setTimeout(() => {
+    gameFalling = false;
+    gameFallingIndices = new Set();
+    render();
+    resolveMatchesAnimated(false);
+  }, 320);
 };
 
-const resolveMatchesAnimated = () => {
+const resolveMatchesAnimated = (isPlayerMatch = true) => {
+  if (gameUpgradePending) {
+    return;
+  }
   if (gameAnimating) {
     return;
   }
-  const { matches, runs } = getMatchRuns(gameGrid);
+  let { matches, runs } = getMatchRuns(gameGrid);
   if (matches.size === 0) {
     return;
+  }
+  applyLocalCombo(Math.max(1, runs.length));
+  const insanityActive = gameInsanityUntil ? Date.now() <= gameInsanityUntil.getTime() : false;
+  if (insanityActive && isPlayerMatch) {
+    matches = expandInsanityMatches(matches);
   }
   gameAnimating = true;
   gameClearingIndices = new Set(matches);
   if (Math.random() < gameBombDropChance) {
     gameBombs += 1;
+    spawnBombFlyAnimation();
+  }
+  if (Math.random() < gameCrystalDropChance) {
+    gameCrystals += 1;
+    spawnCrystalFlyAnimation();
   }
   if (runs.length > 0) {
     let points = 0;
-    runs.forEach((length) => {
-      if (length >= 5) {
-        points += 50;
-      } else if (length === 4) {
-        points += 20;
-      } else if (length === 3) {
-        points += 10;
-      }
-    });
+    if (insanityActive && isPlayerMatch) {
+      points = matches.size * 10;
+    } else {
+      runs.forEach((length) => {
+        if (length >= 5) {
+          points += 50;
+        } else if (length === 4) {
+          points += 20;
+        } else if (length === 3) {
+          points += 10;
+        }
+      });
+    }
     if (points > 0 && gameScoreMultiplier > 1) {
       points = Math.round(points * gameScoreMultiplier);
     }
@@ -1809,8 +2058,11 @@ const resolveMatchesAnimated = () => {
       gameFallingIndices = new Set();
       render();
       gameAnimating = false;
+      if (gameUpgradePending) {
+        return;
+      }
       if (getMatchRuns(gameGrid).matches.size > 0) {
-        resolveMatchesAnimated();
+        resolveMatchesAnimated(false);
       }
     }, 320);
   }, 200);
@@ -2030,6 +2282,13 @@ const render = () => {
     highScoreLoaded = false;
   }
   if (resolvedPath !== '/spele') {
+    insanityActiveClient = false;
+    if (!insanityAudio.paused) {
+      insanityAudio.pause();
+    }
+    if (!gameAudioMuted) {
+      gameAudio.volume = gameAudioVolume;
+    }
     if (gameStarted && !gameEndSubmitted) {
       endGame();
     }
@@ -2556,6 +2815,89 @@ function initResults() {
   }
 }
 
+const initLocalGameSession = (options?: { reset?: boolean; start?: boolean }) => {
+  if (options?.reset || !gameSessionLoaded) {
+    initGameGrid();
+    gameScore = 0;
+    gameDurationSeconds = 60;
+    gameTimeLeft = gameDurationSeconds;
+    gameBombs = 1;
+    gameCrystals = 1;
+    gameBombDropChance = 0.02;
+    gameCrystalDropChance = 0.01;
+    gameScoreMultiplier = 1;
+    gameRefreshBase = 5;
+    gameRefreshCooldown = 5;
+    gameUpgradePending = false;
+    gameUpgradeTier = -1;
+    gameUpgradeChoices = [];
+    gameUpgradeIndex = 0;
+    gameComboCount = 0;
+    gameComboLastAt = null;
+    gameComboTarget = 20;
+    gameComboWindowMs = 2000;
+    gameInsanityDurationMs = 4000;
+    gameInsanityUntil = null;
+    gameComboFlash = 0;
+    gameComboResetFlash = false;
+    gameComboFlashPos = { x: 50, y: 50 };
+    if (gameComboFlashTimer) {
+      window.clearTimeout(gameComboFlashTimer);
+      gameComboFlashTimer = null;
+    }
+    gameComboFlashTimers.forEach((timerId) => window.clearTimeout(timerId));
+    gameComboFlashTimers = [];
+    if (gameComboResetTimer) {
+      window.clearTimeout(gameComboResetTimer);
+      gameComboResetTimer = null;
+    }
+    clearPredictionTimers();
+  }
+  if (options?.start) {
+    gameStarted = true;
+  }
+  gameSessionLoaded = true;
+  render();
+};
+
+const applyLocalUpgrade = (choice: UpgradeChoice) => {
+  const tier = UPGRADE_TIERS[gameUpgradeTier] ?? UPGRADE_TIERS[0];
+  if (choice === 'time') {
+    gameDurationSeconds = Math.max(0, gameDurationSeconds + tier.time);
+  } else if (choice === 'multiplier') {
+    gameScoreMultiplier = Math.max(1, gameScoreMultiplier + tier.multiplier);
+  } else if (choice === 'bomb') {
+    gameBombDropChance = Math.min(1, gameBombDropChance + tier.bomb);
+  } else if (choice === 'crystal') {
+    gameCrystalDropChance = Math.min(1, gameCrystalDropChance + tier.crystal);
+  } else if (choice === 'combo') {
+    gameComboTarget = Math.max(3, gameComboTarget - tier.combo);
+  } else if (choice === 'insanity') {
+    gameInsanityDurationMs = Math.max(1000, gameInsanityDurationMs + tier.insanity);
+  } else if (choice === 'refresh') {
+    if (tier.refresh) {
+      gameRefreshBase = 0;
+      gameRefreshCooldown = 0;
+    }
+  }
+  gameUpgradePending = false;
+  gameUpgradeChoices = [];
+  gameUpgradeTier = -1;
+  const nextThreshold = UPGRADE_THRESHOLDS[gameUpgradeIndex];
+  if (nextThreshold !== undefined && gameScore >= nextThreshold && !gameUpgradePending) {
+    gameUpgradePending = true;
+    gameUpgradeTier = gameUpgradeIndex;
+    gameUpgradeChoices = pickUpgradeChoices();
+    gameUpgradeIndex = Math.min(gameUpgradeIndex + 1, UPGRADE_THRESHOLDS.length);
+    pauseForUpgrade();
+  } else {
+    gameStarted = true;
+    resumeFromUpgrade();
+  }
+  gameTimeLeft = gameDurationSeconds;
+  render();
+};
+
 window.startGame = () => {
   if (gameStarted) {
     return;
@@ -2565,7 +2907,7 @@ window.startGame = () => {
   gameHighScoreLoading = false;
   gameHighScoreError = null;
   gameEndSubmitted = false;
-  fetchGameSession({ start: true });
+  initLocalGameSession({ start: true });
   if (!gameAudioStarted) {
     gameAudio.muted = gameAudioMuted;
     gameAudio.volume = gameAudioMuted ? 0 : gameAudioVolume;
@@ -2587,103 +2929,14 @@ window.restartGame = () => {
   gameHighScoreError = null;
   gameEndSubmitted = false;
   gameUpgradePending = false;
-  fetchGameSession({ reset: true, start: true });
+  initLocalGameSession({ reset: true, start: true });
 };
 
-window.selectUpgrade = async (choice = 'time' as UpgradeChoice) => {
+window.selectUpgrade = (choice = 'time' as UpgradeChoice) => {
   if (!gameUpgradePending) {
     return;
   }
-  const state = await sendGameAction('/game/upgrade', { choice });
-  if (state) {
-    applyGameState(state);
-  }
-};
-
-type GameState = {
-  grid: string[];
-  score: number;
-  timeLeft: number;
-  status: 'ready' | 'active' | 'ended' | 'upgrade';
-  bombs: number;
-  crystals: number;
-  bombDropChance: number;
-  crystalDropChance: number;
-  scoreMultiplier: number;
-  refreshBase: number;
-  upgradePending: boolean;
-  upgradeTier: number;
-  upgradeChoices: UpgradeChoice[];
-  hasMoves?: boolean;
-};
-
-const applyGameState = (state: GameState) => {
-  const previousScore = gameScore;
-  const previousBombs = gameBombs;
-  const previousCrystals = gameCrystals;
-  gameGrid = state.grid;
-  gameScore = state.score;
-  gameTimeLeft = state.timeLeft;
-  gameStarted = state.status === 'active';
-  gameBombs = state.bombs;
-  gameCrystals = state.crystals ?? 0;
-  gameBombDropChance = state.bombDropChance;
-  gameCrystalDropChance = state.crystalDropChance ?? 0;
-  gameScoreMultiplier = state.scoreMultiplier;
-  gameRefreshBase = state.refreshBase;
-  if (state.score > previousScore) {
-    gameRefreshCooldown = state.refreshBase;
-  } else if (gameRefreshCooldown > state.refreshBase) {
-    gameRefreshCooldown = state.refreshBase;
-  }
-  gameUpgradePending = state.upgradePending || state.status === 'upgrade';
-  gameUpgradeTier = state.upgradeTier ?? -1;
-  gameUpgradeChoices = state.upgradeChoices ?? [];
-  gameSessionLoaded = true;
-  if (gameTimeLeft <= 0 && !gameEndSubmitted) {
-    endGame();
-  }
-  if (state.score > previousScore) {
-    explosionAudio.currentTime = 0;
-    explosionAudio.volume = 0.7;
-    explosionAudio.muted = gameAudioMuted;
-    explosionAudio.play().catch(() => {});
-  }
-  if (state.bombs > previousBombs) {
-    spawnBombFlyAnimation();
-  }
-  if (state.crystals > previousCrystals) {
-    spawnCrystalFlyAnimation();
-  }
-  render();
-};
-
-const sendGameAction = async (path: string, body: Record<string, unknown>) => {
-  if (!authToken) {
-    return null;
-  }
-  if (gameNetworkBusy) {
-    return null;
-  }
-  gameNetworkBusy = true;
-  try {
-    const response = await fetch(`${API_BASE_URL}${path}`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${authToken}`,
-      },
-      body: JSON.stringify(body),
-    });
-    if (!response.ok) {
-      throw new Error('Game request failed');
-    }
-    return (await response.json()) as GameState;
-  } catch {
-    return null;
-  } finally {
-    gameNetworkBusy = false;
-  }
+  applyLocalUpgrade(choice);
 };
 
 const spawnBombFlyAnimation = () => {
@@ -2772,26 +3025,29 @@ const updateBombDragTarget = (x: number, y: number) => {
 };
 
 const fetchGameSession = async (options?: { start?: boolean; reset?: boolean }) => {
-  const state = await sendGameAction('/game/session', options ?? {});
-  if (state) {
-    applyGameState(state);
-  }
+  initLocalGameSession(options);
 };
 
 const endGame = async () => {
+  gameStarted = false;
+  syncInsanityAudio();
   if (!authToken || gameEndSubmitted) {
+    render();
     return;
   }
   gameEndSubmitted = true;
+  gameHighScoreLoading = true;
   try {
-    const response = await fetch(`${API_BASE_URL}/game/end`, {
+    const response = await fetch(`${API_BASE_URL}/users/highscore`, {
       method: 'POST',
       headers: {
+        'Content-Type': 'application/json',
         Authorization: `Bearer ${authToken}`,
       },
+      body: JSON.stringify({ score: gameScore }),
     });
     if (!response.ok) {
-      throw new Error('End game failed');
+      throw new Error('Highscore failed');
     }
     const data = (await response.json()) as {
       score?: number;
@@ -2805,6 +3061,7 @@ const endGame = async () => {
   } catch {
     gameHighScoreError = 'Neizdevās saglabāt rezultātu.';
   } finally {
+    gameHighScoreLoading = false;
     render();
   }
 };
@@ -2899,6 +3156,7 @@ function initGame() {
     gameTimerId = window.setInterval(() => {
       if (gameTimeLeft > 0) {
         gameTimeLeft -= 1;
+        syncInsanityAudio();
         render();
       }
       if (gameTimeLeft <= 0 && gameTimerId) {
@@ -2915,6 +3173,9 @@ function initGame() {
 
   if (!gameRefreshTimerId && gameRefreshCooldown > 0) {
     gameRefreshTimerId = window.setInterval(() => {
+      if (gameUpgradePending) {
+        return;
+      }
       if (gameRefreshCooldown > 0) {
         gameRefreshCooldown -= 1;
         render();
@@ -2935,11 +3196,9 @@ function initGame() {
       if (gameRefreshCooldown > 0) {
         return;
       }
-      sendGameAction('/game/refresh', {}).then((state) => {
-        if (state) {
-          applyGameState(state);
-        }
-      });
+      initGameGrid();
+      gameRefreshCooldown = gameRefreshBase;
+      render();
     });
   }
 
@@ -3181,7 +3440,6 @@ function initGame() {
         gameCrystalDragging = false;
         gameCrystalTargetIndex = null;
         if (!Number.isNaN(idx)) {
-          gameCrystals = Math.max(0, gameCrystals - 1);
           applyCrystalAt(idx);
         }
         render();
@@ -3194,7 +3452,6 @@ function initGame() {
         gameBombDragging = false;
         gameBombTargetIndex = null;
         if (!Number.isNaN(idx)) {
-          gameBombs = Math.max(0, gameBombs - 1);
           applyBombAt(idx);
         }
         render();
@@ -3252,31 +3509,17 @@ function initGame() {
       swipeAudio.muted = gameAudioMuted;
       swipeAudio.play().catch(() => {});
       if (fromIndex !== toIndex) {
-        const previousGrid = gameGrid;
         gameGrid = swapGridIndices(gameGrid, fromIndex, toIndex);
         const { matches } = getMatchRuns(gameGrid);
         if (matches.size > 0) {
-          resolveMatchesPreview();
+          resolveMatchesAnimated(true);
+        } else {
+          window.setTimeout(() => {
+            gameGrid = swapGridIndices(gameGrid, fromIndex, toIndex);
+            render();
+          }, 120);
         }
         render();
-        sendGameAction('/game/move', { from: fromIndex, to: toIndex }).then((state) => {
-          if (state) {
-            if (gamePredicting) {
-              gamePendingServerState = state;
-            } else {
-              applyGameState(state);
-            }
-          } else {
-            gameGrid = previousGrid;
-            render();
-          }
-          if (gamePendingMatchTimer) {
-            window.clearTimeout(gamePendingMatchTimer);
-            gamePendingMatchTimer = null;
-          }
-          gameClearingIndices = new Set();
-          render();
-        });
       }
       render();
     });
@@ -3299,7 +3542,6 @@ function initGame() {
           gameCrystalDragging = false;
           gameCrystalTargetIndex = null;
           if (!Number.isNaN(idx)) {
-            gameCrystals = Math.max(0, gameCrystals - 1);
             applyCrystalAt(idx);
           }
           render();
@@ -3312,7 +3554,6 @@ function initGame() {
           gameBombDragging = false;
           gameBombTargetIndex = null;
           if (!Number.isNaN(idx)) {
-            gameBombs = Math.max(0, gameBombs - 1);
             applyBombAt(idx);
           }
           render();
