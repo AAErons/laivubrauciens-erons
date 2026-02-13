@@ -50,6 +50,7 @@ type UserProfile = {
   picture?: string;
   firstTaskCompletedAt?: string | null;
   highScore?: number;
+  gameEmojiTheme?: string;
 };
 
 type GallerySummary = Record<number, number>;
@@ -152,6 +153,7 @@ let memeDragTarget: 'top' | 'bottom' | null = null;
 let memeDragOffset = { x: 0, y: 0 };
 let memePreviewRect: DOMRect | null = null;
 let memeDragBound = false;
+let navClickBound = false;
 let memeError: string | null = null;
 let memeSubmitting = false;
 let memesList: MemeEntry[] = [];
@@ -162,7 +164,10 @@ let memeExisting: MemeEntry | null = null;
 let memeStatusLoaded = false;
 let memeGalleryOpenIndex: number | null = null;
 const GAME_SIZE = 5;
-const GAME_EMOJIS = ['⛵', '☀️', '🏖️', '🍺', '😊'];
+const EMOJI_THEMES: Record<string, string[]> = {
+  laivu: ['⛵', '☀️', '🏖️', '🍺', '😊'],
+  auglisi: ['🍎', '🍊', '🍋', '🍇', '🍉'],
+};
 const UPGRADE_THRESHOLD = 20;
 const UPGRADE_POOL = ['time', 'multiplier', 'refresh', 'bomb', 'crystal'] as const;
 const UPGRADE_THRESHOLDS = [250, 750, 2000];
@@ -254,6 +259,7 @@ const getProfileDefaults = () => {
     participationYears: currentUser?.participationYears ?? [],
     pastExperience: currentUser?.pastExperience ?? '',
     showProfile: currentUser?.showProfile ?? false,
+    gameEmojiTheme: currentUser?.gameEmojiTheme ?? 'laivu',
   };
 };
 
@@ -268,6 +274,7 @@ const profilePage = () => {
   const safeName = escapeHtml(currentUser?.name ?? '');
   const pictureUrl = currentUser?.picture ? escapeHtml(currentUser.picture) : '';
   const favoriteColor = escapeHtml(defaults.favoriteColor);
+  const selectedTheme = defaults.gameEmojiTheme;
   const yearsSelected = defaults.participationYears ?? [];
   const yearsCount = yearsSelected.length;
 
@@ -421,6 +428,31 @@ const profilePage = () => {
           value="${safePastExperience}"
         />
       </label>
+      <div class="grid gap-3">
+        <p class="text-xs uppercase tracking-[0.2em] text-slate-500">Spēles iestatījumi</p>
+        <div class="flex flex-wrap gap-3">
+          <label class="flex items-center gap-2 rounded-full border border-slate-700/70 px-3 py-2 text-xs uppercase tracking-[0.2em] text-slate-300">
+            <input
+              class="h-4 w-4 rounded border border-slate-600 bg-slate-950 text-slate-200 focus:ring-0"
+              type="radio"
+              name="profile-emoji-theme"
+              value="laivu"
+              ${selectedTheme === 'laivu' ? 'checked' : ''}
+            />
+            LaivuBrauciens
+          </label>
+          <label class="flex items-center gap-2 rounded-full border border-slate-700/70 px-3 py-2 text-xs uppercase tracking-[0.2em] text-slate-300">
+            <input
+              class="h-4 w-4 rounded border border-slate-600 bg-slate-950 text-slate-200 focus:ring-0"
+              type="radio"
+              name="profile-emoji-theme"
+              value="auglisi"
+              ${selectedTheme === 'auglisi' ? 'checked' : ''}
+            />
+            Auglīši
+          </label>
+        </div>
+      </div>
       <div class="flex flex-wrap items-center gap-4">
         <input
           class="block text-sm text-slate-300 file:mr-4 file:rounded-full file:border-0 file:bg-slate-100 file:px-4 file:py-2 file:text-sm file:font-medium file:text-slate-900 hover:file:bg-white"
@@ -765,7 +797,9 @@ const formatParticipantName = (user: TaskResult) => {
   return `${firstName} ${lastName}`.trim() || user.name || 'Dalībnieks';
 };
 
-const spelePage = () => `
+const spelePage = () => {
+  const scoreEmoji = getActiveEmojiSet()[0];
+  return `
   <section class="rounded-3xl border border-white/5 bg-white/5 p-8">
     <div class="flex flex-col gap-6">
       <div class="flex flex-nowrap items-center justify-center gap-3 text-xs uppercase tracking-[0.3em] text-slate-300 sm:gap-6 sm:text-sm">
@@ -804,15 +838,15 @@ const spelePage = () => `
         <div class="hidden w-48 flex-col gap-3 rounded-2xl border border-white/10 bg-slate-950/40 p-4 text-xs uppercase tracking-[0.25em] text-slate-300 md:flex">
           <span class="text-slate-500">Punkti</span>
           <div class="flex items-center justify-between">
-            <span class="flex items-center gap-2 text-lg">🍺 ×3</span>
+            <span class="flex items-center gap-2 text-lg">${scoreEmoji} ×3</span>
             <span class="${gameScoreMultiplier > 1 ? 'text-emerald-200' : ''}">${Math.round(10 * gameScoreMultiplier)}</span>
           </div>
           <div class="flex items-center justify-between">
-            <span class="flex items-center gap-2 text-lg">🍺 ×4</span>
+            <span class="flex items-center gap-2 text-lg">${scoreEmoji} ×4</span>
             <span class="${gameScoreMultiplier > 1 ? 'text-emerald-200' : ''}">${Math.round(20 * gameScoreMultiplier)}</span>
           </div>
           <div class="flex items-center justify-between">
-            <span class="flex items-center gap-2 text-lg">🍺 ×5</span>
+            <span class="flex items-center gap-2 text-lg">${scoreEmoji} ×5</span>
             <span class="${gameScoreMultiplier > 1 ? 'text-emerald-200' : ''}">${Math.round(50 * gameScoreMultiplier)}</span>
           </div>
           ${
@@ -896,11 +930,11 @@ const spelePage = () => `
         ${
           !gameStarted || gameTimeLeft <= 0 || gameUpgradePending
             ? `
-          <div class="pointer-events-auto absolute inset-0 z-10 flex items-center justify-center rounded-3xl bg-slate-950/70 backdrop-blur-sm">
+          <div class="pointer-events-none absolute inset-0 z-10 flex items-center justify-center rounded-3xl bg-slate-950/70 backdrop-blur-sm">
             ${
               gameUpgradePending
                 ? `
-              <div class="flex flex-col items-center gap-4 text-center">
+              <div class="pointer-events-auto flex flex-col items-center gap-4 text-center">
                 <p class="text-xs uppercase tracking-[0.3em] text-slate-300">Izvēlies uzlabojumu</p>
                 <div class="grid w-full max-w-2xl grid-cols-1 gap-4 sm:grid-cols-3 sm:gap-5">
                   ${gameUpgradeChoices
@@ -934,7 +968,7 @@ const spelePage = () => `
             `
                 : gameTimeLeft <= 0
                   ? `
-                <div class="flex flex-col items-center gap-3 text-center">
+                <div class="pointer-events-auto flex flex-col items-center gap-3 text-center">
                   <p class="text-xs uppercase tracking-[0.3em] text-slate-400">Spēle beigusies</p>
                   <p class="text-2xl font-semibold text-slate-100">${gameScore} punkti</p>
                   ${
@@ -953,8 +987,8 @@ const spelePage = () => `
                               </div>`
                           : ''
                   }
-                  <button
-                    class="pointer-events-auto rounded-full border border-white/10 bg-slate-100 px-6 py-3 text-sm font-semibold uppercase tracking-[0.25em] text-slate-900 transition hover:bg-white"
+                <button
+                  class="pointer-events-auto rounded-full border border-white/10 bg-slate-100 px-6 py-3 text-sm font-semibold uppercase tracking-[0.25em] text-slate-900 transition hover:bg-white"
                     id="game-restart"
                     onclick="window.restartGame && window.restartGame()"
                     type="button"
@@ -1046,6 +1080,7 @@ const spelePage = () => `
     </div>
   </section>
 `;
+};
 
 const memesPage = () => {
   const showForm = Boolean(currentUser) && memeFormOpen && !memeExisting;
@@ -1416,7 +1451,13 @@ const resultsPage = () => {
   `;
 };
 
-const randomEmoji = () => GAME_EMOJIS[Math.floor(Math.random() * GAME_EMOJIS.length)];
+const getActiveEmojiSet = () =>
+  EMOJI_THEMES[currentUser?.gameEmojiTheme ?? 'laivu'] ?? EMOJI_THEMES.laivu;
+
+const randomEmoji = () => {
+  const emojis = getActiveEmojiSet();
+  return emojis[Math.floor(Math.random() * emojis.length)];
+};
 
 const getMatchRuns = (grid: string[]) => {
   const matches = new Set<number>();
@@ -1644,7 +1685,7 @@ const triggerBombExplosion = (index: number) => {
   window.setTimeout(() => {
     gameBombExplosionIndices = new Set();
     render();
-  }, 320);
+  }, 200);
 };
 
 const triggerCrystalExplosion = (index: number) => {
@@ -1663,7 +1704,7 @@ const triggerCrystalExplosion = (index: number) => {
   window.setTimeout(() => {
     gameCrystalExplosionIndices = new Set();
     render();
-  }, 320);
+  }, 200);
 };
 
 const applyBombAt = async (index: number) => {
@@ -1679,7 +1720,7 @@ const applyBombAt = async (index: number) => {
         applyGameState(gamePendingBombState);
         gamePendingBombState = null;
       }
-    }, 320);
+    }, 200);
   }
 };
 
@@ -1692,7 +1733,7 @@ const applyCrystalAt = async (index: number) => {
     triggerCrystalExplosion(index);
     window.setTimeout(() => {
       applyGameState(state);
-    }, 320);
+    }, 200);
   }
 };
 
@@ -1913,7 +1954,7 @@ const render = () => {
 
   app.innerHTML = `
     <div class="min-h-screen bg-gradient-to-br from-slate-950 via-slate-900 to-slate-800">
-      <header class="sticky top-0 z-10 border-b border-white/5 bg-slate-950/70 backdrop-blur">
+      <header class="sticky top-0 z-[100] pointer-events-auto border-b border-white/5 bg-slate-950/70 backdrop-blur">
         <div class="mx-auto flex max-w-5xl items-center justify-between px-6 py-5 sm:px-10">
           <a
             class="text-xs uppercase tracking-[0.35em] text-slate-400 transition hover:text-slate-200"
@@ -1921,7 +1962,7 @@ const render = () => {
           >
             Laivu brauciens
           </a>
-          <nav class="flex flex-wrap items-center gap-4 text-sm text-slate-300">
+          <nav class="pointer-events-auto flex flex-wrap items-center gap-4 text-sm text-slate-300">
             <a class="transition hover:text-slate-50" href="#/dalibnieki">Dalībnieki</a>
             <a class="transition hover:text-slate-50" href="#/galerija">Galerija</a>
             <a class="transition hover:text-slate-50" href="#/apraksts">Apraksts</a>
@@ -1948,7 +1989,7 @@ const render = () => {
           </nav>
     </div>
       </header>
-      <main class="mx-auto flex min-h-screen max-w-4xl flex-col justify-center gap-16 px-6 py-16 sm:px-10">
+      <main class="relative z-0 mx-auto flex min-h-screen max-w-4xl flex-col justify-center gap-16 px-6 py-16 sm:px-10">
         ${page}
       </main>
     </div>
@@ -1989,6 +2030,9 @@ const render = () => {
     highScoreLoaded = false;
   }
   if (resolvedPath !== '/spele') {
+    if (gameStarted && !gameEndSubmitted) {
+      endGame();
+    }
     gameAudioStarted = false;
     gameStarted = false;
     gameSessionLoaded = false;
@@ -2037,6 +2081,52 @@ const render = () => {
   }
   if (resolvedPath === '/spele') {
     initGame();
+  }
+  if (!navClickBound) {
+    navClickBound = true;
+    const handleNav = (event: Event) => {
+      const link = (event.target as HTMLElement | null)?.closest?.('a[href^="#/"]') as
+        | HTMLAnchorElement
+        | null;
+      if (!link) {
+        return;
+      }
+      const href = link.getAttribute('href');
+      if (!href) {
+        return;
+      }
+      event.preventDefault();
+      event.stopPropagation();
+      if (window.location.hash === href) {
+        render();
+        return;
+      }
+      window.location.hash = href;
+    };
+    document.addEventListener(
+      'pointerdown',
+      (event) => {
+        const link = (event.target as HTMLElement | null)?.closest?.('a[href^="#/"]') as
+          | HTMLAnchorElement
+          | null;
+        if (!link) {
+          return;
+        }
+        const href = link.getAttribute('href');
+        if (!href) {
+          return;
+        }
+        event.preventDefault();
+        event.stopPropagation();
+        if (window.location.hash === href) {
+          render();
+          return;
+        }
+        window.location.hash = href;
+      },
+      true,
+    );
+    document.addEventListener('click', handleNav, true);
   }
   if (resolvedPath !== '/spele') {
     gameAudio.pause();
@@ -2166,6 +2256,9 @@ function initProfileForm() {
   const nicknameInput = document.getElementById('profile-nickname') as HTMLInputElement | null;
   const favoriteFoodInput = document.getElementById('profile-favorite-food') as HTMLInputElement | null;
   const pastExperienceInput = document.getElementById('profile-experience') as HTMLInputElement | null;
+  const themeInputs = Array.from(
+    document.querySelectorAll<HTMLInputElement>('input[name="profile-emoji-theme"]'),
+  );
   const yearInputs = Array.from(
     document.querySelectorAll<HTMLInputElement>('input[data-participation-year]'),
   );
@@ -2273,6 +2366,8 @@ function initProfileForm() {
         participationYears,
         pastExperience: pastExperienceInput.value.trim(),
         showProfile: showInput.checked,
+        gameEmojiTheme:
+          themeInputs.find((input) => input.checked)?.value ?? user.gameEmojiTheme ?? 'laivu',
         picture: user.picture,
         name: displayName || user.name,
       };
@@ -2535,7 +2630,11 @@ const applyGameState = (state: GameState) => {
   gameCrystalDropChance = state.crystalDropChance ?? 0;
   gameScoreMultiplier = state.scoreMultiplier;
   gameRefreshBase = state.refreshBase;
-  gameRefreshCooldown = state.refreshBase;
+  if (state.score > previousScore) {
+    gameRefreshCooldown = state.refreshBase;
+  } else if (gameRefreshCooldown > state.refreshBase) {
+    gameRefreshCooldown = state.refreshBase;
+  }
   gameUpgradePending = state.upgradePending || state.status === 'upgrade';
   gameUpgradeTier = state.upgradeTier ?? -1;
   gameUpgradeChoices = state.upgradeChoices ?? [];
@@ -2610,7 +2709,7 @@ const spawnBombFlyAnimation = () => {
   });
   window.setTimeout(() => {
     el.remove();
-  }, 650);
+  }, 450);
 };
 
 const spawnCrystalFlyAnimation = () => {
@@ -2637,7 +2736,7 @@ const spawnCrystalFlyAnimation = () => {
   });
   window.setTimeout(() => {
     el.remove();
-  }, 650);
+  }, 450);
 };
 
 const getTouchPoint = (event: TouchEvent) => {

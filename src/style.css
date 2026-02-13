@@ -179,11 +179,11 @@
   }
 
   .game-tile--bomb-explode {
-    animation: bombExplode 0.32s ease-out;
+    animation: bombExplode 0.2s ease-out;
   }
 
   .game-tile--crystal-explode {
-    animation: crystalExplode 0.32s ease-out;
+    animation: crystalExplode 0.2s ease-out;
   }
 
   .game-inventory-item {
@@ -197,13 +197,13 @@
   .bomb-fly {
     @apply pointer-events-none fixed z-50 flex h-8 w-8 items-center justify-center;
     font-size: 24px;
-    transition: transform 0.6s ease;
+    transition: transform 0.4s ease;
   }
 
   .crystal-fly {
     @apply pointer-events-none fixed z-50 flex h-8 w-8 items-center justify-center;
     font-size: 24px;
-    transition: transform 0.6s ease;
+    transition: transform 0.4s ease;
   }
 }
 
