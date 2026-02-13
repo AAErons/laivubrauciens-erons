@@ -2614,6 +2614,7 @@ type GameState = {
   upgradePending: boolean;
   upgradeTier: number;
   upgradeChoices: UpgradeChoice[];
+  hasMoves?: boolean;
 };
 
 const applyGameState = (state: GameState) => {
