@@ -664,6 +664,104 @@ const authPage = () => `
   </section>
 `;
 
+const BABYRHYTHM_PRIVACY_PAGE = () => `
+  <section class="mx-auto max-w-3xl rounded-3xl border border-white/5 bg-white/5 p-8 sm:p-10">
+    <h1 class="text-2xl font-semibold text-white sm:text-3xl">Privacy Policy for BabyRhythm</h1>
+    <p class="mt-2 text-slate-400">Last updated: March 19, 2026</p>
+    <p class="mt-6 text-slate-300 leading-relaxed">
+      BabyRhythm ("we," "our," or "us") respects your privacy. This Privacy Policy explains how we collect, use, store, and protect information when you use the BabyRhythm mobile application and related services.
+    </p>
+    <p class="mt-4 text-slate-300 leading-relaxed">
+      BabyRhythm is a baby tracking app that helps parents and caregivers record and view information such as feeding, sleep, diaper changes, growth, temperature, medication, and other baby-related routines.
+    </p>
+
+    <h2 class="mt-10 text-lg font-semibold text-white">1. Information We Collect</h2>
+    <p class="mt-2 text-slate-300 leading-relaxed">
+      Depending on how you use BabyRhythm, we may collect the following types of information:
+    </p>
+    <h3 class="mt-4 font-medium text-slate-200">Account information</h3>
+    <p class="mt-1 text-slate-300 leading-relaxed">
+      If you create an account, we may collect: email address; password or authentication credentials; account identifiers.
+    </p>
+    <h3 class="mt-4 font-medium text-slate-200">Baby and care data</h3>
+    <p class="mt-1 text-slate-300 leading-relaxed">
+      You may choose to enter and store: baby name or nickname; date of birth; feeding records; sleep records; diaper records; weight and height entries; temperature entries; medication records; notes and routine-related data.
+    </p>
+    <h3 class="mt-4 font-medium text-slate-200">Device and technical information</h3>
+    <p class="mt-1 text-slate-300 leading-relaxed">
+      We may automatically collect limited technical information needed to operate the app, such as: app version; device type; operating system; crash logs; diagnostic data; approximate usage data.
+    </p>
+
+    <h2 class="mt-10 text-lg font-semibold text-white">2. How We Use Your Information</h2>
+    <p class="mt-2 text-slate-300 leading-relaxed">
+      We use information to: provide and operate BabyRhythm; save and display your baby tracking records; synchronize your data across devices, if supported; improve app functionality and performance; troubleshoot bugs and technical issues; communicate with you about important service or account matters; protect the security and integrity of the app.
+    </p>
+    <p class="mt-2 text-slate-300 leading-relaxed">
+      We do not use your personal data for unrelated purposes without notice.
+    </p>
+
+    <h2 class="mt-10 text-lg font-semibold text-white">3. Legal Basis for Processing</h2>
+    <p class="mt-2 text-slate-300 leading-relaxed">
+      If you are located in the European Economic Area, United Kingdom, or another region with similar privacy laws, we process your information only when we have a legal basis to do so, including: to perform our contract with you; with your consent; to comply with legal obligations; for our legitimate interests, such as improving and securing the app.
+    </p>
+
+    <h2 class="mt-10 text-lg font-semibold text-white">4. How Your Information Is Stored</h2>
+    <p class="mt-2 text-slate-300 leading-relaxed">
+      Your information may be stored on secure servers and service providers that help us operate BabyRhythm. We take reasonable technical and organizational measures to protect your data from unauthorized access, loss, misuse, or disclosure. However, no system can be guaranteed to be 100% secure.
+    </p>
+
+    <h2 class="mt-10 text-lg font-semibold text-white">5. Data Sharing</h2>
+    <p class="mt-2 text-slate-300 leading-relaxed">
+      We do not sell your personal information. We may share information only in the following cases: with service providers who help us operate the app, such as hosting, authentication, analytics, crash reporting, or cloud storage providers; if required by law, regulation, legal process, or government request; to protect the rights, safety, and security of users, our services, or others; in connection with a merger, acquisition, or sale of assets, if applicable. Any service providers we use are expected to process data only as needed to provide their services to us.
+    </p>
+
+    <h2 class="mt-10 text-lg font-semibold text-white">6. Data Retention</h2>
+    <p class="mt-2 text-slate-300 leading-relaxed">
+      We keep your information only for as long as necessary to provide the app and fulfill the purposes described in this Privacy Policy, unless a longer retention period is required by law. If you delete your account or request deletion, we will delete or anonymize your data within a reasonable period, unless we are legally required to retain certain information.
+    </p>
+
+    <h2 class="mt-10 text-lg font-semibold text-white">7. Your Rights</h2>
+    <p class="mt-2 text-slate-300 leading-relaxed">
+      Depending on your location, you may have the right to: access your personal information; correct inaccurate information; request deletion of your information; object to or restrict certain processing; withdraw consent where processing is based on consent; receive a copy of your data, where applicable. To exercise any of these rights, contact us at: <a class="text-sky-400 hover:underline" href="mailto:theeriksfreimanis@gmail.com">theeriksfreimanis@gmail.com</a>
+    </p>
+
+    <h2 class="mt-10 text-lg font-semibold text-white">8. Children's Privacy</h2>
+    <p class="mt-2 text-slate-300 leading-relaxed">
+      BabyRhythm is intended for use by parents, guardians, and caregivers. The app may store information about babies and children only as entered by an adult user. We do not knowingly allow children to create accounts on their own. If you believe information has been provided to us inappropriately, please contact us and we will review and delete it where required.
+    </p>
+
+    <h2 class="mt-10 text-lg font-semibold text-white">9. International Data Transfers</h2>
+    <p class="mt-2 text-slate-300 leading-relaxed">
+      If your information is transferred to or stored in a country other than your own, we will take reasonable steps to ensure appropriate safeguards are in place as required by applicable law.
+    </p>
+
+    <h2 class="mt-10 text-lg font-semibold text-white">10. Third-Party Services</h2>
+    <p class="mt-2 text-slate-300 leading-relaxed">
+      BabyRhythm may rely on third-party services for hosting, authentication, analytics, crash reporting, notifications, or similar operational features. Those third parties may process data on our behalf in accordance with their own terms and privacy policies.
+    </p>
+
+    <h2 class="mt-10 text-lg font-semibold text-white">11. Data Security</h2>
+    <p class="mt-2 text-slate-300 leading-relaxed">
+      We use reasonable measures designed to protect your information, including access controls and secure infrastructure where appropriate. Even so, no method of transmission or storage is completely secure, and we cannot guarantee absolute security.
+    </p>
+
+    <h2 class="mt-10 text-lg font-semibold text-white">12. Changes to This Privacy Policy</h2>
+    <p class="mt-2 text-slate-300 leading-relaxed">
+      We may update this Privacy Policy from time to time. If we make material changes, we will update the "Last updated" date and, where required, provide additional notice.
+    </p>
+
+    <h2 class="mt-10 text-lg font-semibold text-white">13. Contact Us</h2>
+    <p class="mt-2 text-slate-300 leading-relaxed">
+      If you have any questions, requests, or concerns about this Privacy Policy or your personal data, contact us at:
+    </p>
+    <p class="mt-4 text-slate-300 leading-relaxed">
+      Ēriks Freimanis<br/>
+      Email: <a class="text-sky-400 hover:underline" href="mailto:theeriksfreimanis@gmail.com">theeriksfreimanis@gmail.com</a><br/>
+      Country: Latvia
+    </p>
+  </section>
+`;
+
 const pages: Record<string, string> = {
   '/': `
     <div class="flex min-h-[70vh] flex-col items-center justify-center gap-10">
@@ -2195,7 +2293,9 @@ const render = () => {
                   ? spelePage()
                   : resolvedPath === '/memes'
                     ? memesPage()
-                    : pages[resolvedPath] ?? pages['/'];
+                    : resolvedPath === '/babyrhythm/privacy'
+                      ? BABYRHYTHM_PRIVACY_PAGE()
+                      : pages[resolvedPath] ?? pages['/'];
   const app = document.querySelector<HTMLDivElement>('#app');
   const profileLabel = currentUser ? 'Mans profils' : 'Ienākt profilā';
   const profileHref = currentUser ? '#/profils' : '#/autentifikacija';
