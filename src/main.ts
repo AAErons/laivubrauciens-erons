@@ -2304,7 +2304,16 @@ const render = () => {
     return;
   }
 
-  app.innerHTML = `
+  if (resolvedPath === '/babyrhythm/privacy') {
+    app.innerHTML = `
+      <div class="min-h-screen bg-gradient-to-br from-slate-950 via-slate-900 to-slate-800">
+        <main class="relative z-0 mx-auto min-h-screen max-w-4xl px-6 py-12 sm:px-10 sm:py-16">
+          ${page}
+        </main>
+      </div>
+    `;
+  } else {
+    app.innerHTML = `
     <div class="min-h-screen bg-gradient-to-br from-slate-950 via-slate-900 to-slate-800">
       <header class="sticky top-0 z-[100] pointer-events-auto border-b border-white/5 bg-slate-950/70 backdrop-blur">
         <div class="mx-auto flex max-w-5xl items-center justify-between px-6 py-5 sm:px-10">
@@ -2346,6 +2355,7 @@ const render = () => {
       </main>
     </div>
   `;
+  }
 
   if (resolvedPath === '/autentifikacija') {
     if (authMode === 'login') {
