@@ -762,6 +762,95 @@ const BABYRHYTHM_PRIVACY_PAGE = () => `
   </section>
 `;
 
+const BABYRHYTHM_DELETE_ACCOUNT_PAGE = () => `
+  <section class="mx-auto max-w-3xl rounded-3xl border border-white/5 bg-white/5 p-8 sm:p-10">
+    <h1 class="text-2xl font-semibold text-white sm:text-3xl">Delete Your BabyRhythm Account</h1>
+    <p class="mt-2 text-slate-400">Last updated: March 20, 2026</p>
+
+    <p class="mt-6 leading-relaxed text-slate-300">
+      BabyRhythm allows users to request deletion of their account and associated data.
+    </p>
+
+    <h2 class="mt-10 text-lg font-semibold text-white">How to request account deletion</h2>
+    <p class="mt-2 leading-relaxed text-slate-300">
+      To request deletion of your BabyRhythm account and associated data, please use one of the following methods:
+    </p>
+
+    <h3 class="mt-4 font-medium text-slate-200">Option 1: In the app</h3>
+    <p class="mt-1 leading-relaxed text-slate-300">
+      Open the BabyRhythm app.<br/>
+      Log in to your account.<br/>
+      Go to Profile or Settings.<br/>
+      Select Delete Account.<br/>
+      Follow the confirmation steps.
+    </p>
+
+    <h3 class="mt-4 font-medium text-slate-200">Option 2: By email</h3>
+    <p class="mt-1 leading-relaxed text-slate-300">
+      If you cannot access the app, send an email to:
+    </p>
+    <p class="mt-2 leading-relaxed text-slate-300">
+      <a class="text-sky-400 hover:underline" href="mailto:theeriksfreimanis@gmail.com">theeriksfreimanis@gmail.com</a>
+    </p>
+    <p class="mt-2 leading-relaxed text-slate-300">
+      Use the subject line:
+    </p>
+    <p class="mt-2 leading-relaxed text-slate-200">
+      Account Deletion Request - BabyRhythm
+    </p>
+    <p class="mt-2 leading-relaxed text-slate-300">
+      Please send the request from the email address connected to your BabyRhythm account.
+    </p>
+
+    <h2 class="mt-10 text-lg font-semibold text-white">What data will be deleted</h2>
+    <p class="mt-2 leading-relaxed text-slate-300">
+      When your deletion request is processed, we will delete your BabyRhythm account and associated app data, including:
+    </p>
+    <p class="mt-2 leading-relaxed text-slate-300">
+      account profile information<br/>
+      email address associated with the account<br/>
+      baby tracking records<br/>
+      feeding records<br/>
+      sleep records<br/>
+      diaper records<br/>
+      growth records<br/>
+      temperature records<br/>
+      medication records<br/>
+      notes and related history stored in the app
+    </p>
+
+    <h2 class="mt-10 text-lg font-semibold text-white">What data may be retained</h2>
+    <p class="mt-2 leading-relaxed text-slate-300">
+      We may retain limited information where required for legitimate reasons, such as:
+    </p>
+    <p class="mt-2 leading-relaxed text-slate-300">
+      security and fraud prevention<br/>
+      legal or regulatory compliance<br/>
+      dispute resolution<br/>
+      enforcement of our legal rights
+    </p>
+    <p class="mt-2 leading-relaxed text-slate-300">
+      If any data must be retained for these reasons, it will be kept only for the minimum period necessary and then deleted or anonymized.
+    </p>
+
+    <h2 class="mt-10 text-lg font-semibold text-white">Retention period</h2>
+    <p class="mt-2 leading-relaxed text-slate-300">
+      Account deletion requests are processed within a reasonable period after verification of the request.
+    </p>
+    <p class="mt-2 leading-relaxed text-slate-300">
+      Any data that must be retained for legal, security, or fraud-prevention purposes may be kept for up to 30 days after the deletion request is completed, unless a longer retention period is required by law.
+    </p>
+
+    <h2 class="mt-10 text-lg font-semibold text-white">Contact</h2>
+    <p class="mt-2 leading-relaxed text-slate-300">
+      If you have questions about account deletion, contact:
+    </p>
+    <p class="mt-2 leading-relaxed text-slate-300">
+      <a class="text-sky-400 hover:underline" href="mailto:theeriksfreimanis@gmail.com">theeriksfreimanis@gmail.com</a>
+    </p>
+  </section>
+`;
+
 const pages: Record<string, string> = {
   '/': `
     <div class="flex min-h-[70vh] flex-col items-center justify-center gap-10">
@@ -2295,6 +2384,8 @@ const render = () => {
                     ? memesPage()
                     : resolvedPath === '/babyrhythm/privacy'
                       ? BABYRHYTHM_PRIVACY_PAGE()
+                      : resolvedPath === '/babyrhythm/delete-account'
+                        ? BABYRHYTHM_DELETE_ACCOUNT_PAGE()
                       : pages[resolvedPath] ?? pages['/'];
   const app = document.querySelector<HTMLDivElement>('#app');
   const profileLabel = currentUser ? 'Mans profils' : 'Ienākt profilā';
@@ -2304,7 +2395,7 @@ const render = () => {
     return;
   }
 
-  if (resolvedPath === '/babyrhythm/privacy') {
+  if (resolvedPath === '/babyrhythm/privacy' || resolvedPath === '/babyrhythm/delete-account') {
     app.innerHTML = `
       <div class="min-h-screen bg-gradient-to-br from-slate-950 via-slate-900 to-slate-800">
         <main class="relative z-0 mx-auto min-h-screen max-w-4xl px-6 py-12 sm:px-10 sm:py-16">
