@@ -199,6 +199,7 @@ const setCurrentUser = (user: UserProfile | null) => {
     selfieTodayEntry = null;
     selfieEditMode = false;
     selfieFormOpen = false;
+    selfieAddedDays = 0;
   }
   render();
 };
@@ -223,6 +224,7 @@ let selfieActivity: string = SELFIE_ACTIVITIES[0];
 let selfieTodayEntry: SelfieEntry | null = null;
 let selfieEditMode = false;
 let selfieFormOpen = false;
+let selfieAddedDays = 0;
 let firstTaskLoading = false;
 let firstTaskChecking = false;
 let firstTaskError: string | null = null;
@@ -432,6 +434,19 @@ const profileTabsNav = (activeTab: 'profile' | 'selfie') => `
   </nav>
 `;
 
+const getActivityChallengeTotalDays = () => {
+  const startDate = new Date(2026, 4, 25);
+  const today = new Date();
+  const startDay = new Date(startDate.getFullYear(), startDate.getMonth(), startDate.getDate());
+  const currentDay = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+  if (currentDay.getTime() < startDay.getTime()) {
+    return 1;
+  }
+  const diffMs = currentDay.getTime() - startDay.getTime();
+  const diffDays = Math.floor(diffMs / (24 * 60 * 60 * 1000));
+  return diffDays + 1;
+};
+
 const selfieChallengePage = () => `
   <div class="mt-6 grid gap-4 sm:mt-8 sm:gap-5">
     <div class="rounded-2xl border border-white/10 bg-slate-950/40 p-4 sm:p-5">
@@ -441,6 +456,16 @@ const selfieChallengePage = () => `
         Nofotografējiet sevi darot kādu aktivitāti, bildē jābūt kādam pierādijumam par datumu
         (čeks ar šodienas datumu, telefons rādot šodienas datumu, šodienas avīze utt...).
       </p>
+      <div class="mt-4 grid grid-cols-2 gap-2 text-xs">
+        <div class="rounded-xl border border-white/10 bg-slate-900/50 px-3 py-2">
+          <p class="text-slate-500">Dienas pievienotas</p>
+          <p class="mt-1 text-sm font-semibold text-slate-100">${selfieAddedDays}</p>
+        </div>
+        <div class="rounded-xl border border-white/10 bg-slate-900/50 px-3 py-2">
+          <p class="text-slate-500">Kopējās dienas</p>
+          <p class="mt-1 text-sm font-semibold text-slate-100">${getActivityChallengeTotalDays()}</p>
+        </div>
+      </div>
     </div>
     <div class="rounded-2xl border border-white/10 bg-slate-950/40 p-4 sm:p-5">
       <p class="text-xs uppercase tracking-[0.2em] text-slate-500">Šodienas aktivitāte</p>
@@ -3022,22 +3047,27 @@ function initSelfieForm() {
     selfieError = null;
     render();
     try {
-      const response = await fetch(`${API_BASE_URL}/selfie/me/today`, {
-        headers: {
-          Authorization: `Bearer ${authToken}`,
-        },
-        cache: 'no-store',
-      });
-      if (!response.ok) {
+      const headers = {
+        Authorization: `Bearer ${authToken}`,
+      };
+      const [todayResponse, statsResponse] = await Promise.all([
+        fetch(`${API_BASE_URL}/selfie/me/today`, { headers, cache: 'no-store' }),
+        fetch(`${API_BASE_URL}/selfie/me/stats`, { headers, cache: 'no-store' }),
+      ]);
+      if (!todayResponse.ok) {
         throw new Error('Failed to load selfie');
       }
-      const data = (await response.json()) as { entry?: SelfieEntry | null };
+      const data = (await todayResponse.json()) as { entry?: SelfieEntry | null };
       selfieTodayEntry = data.entry ?? null;
       if (selfieTodayEntry) {
         selfieShowToOthers = selfieTodayEntry.showToOthers;
         selfieActivity = selfieTodayEntry.category || SELFIE_ACTIVITIES[0];
         selfieEditMode = false;
         selfieFormOpen = false;
+      }
+      if (statsResponse.ok) {
+        const statsData = (await statsResponse.json()) as { addedDays?: number };
+        selfieAddedDays = Math.max(0, Number(statsData.addedDays ?? 0));
       }
       selfieLoaded = true;
     } catch {
@@ -3108,6 +3138,7 @@ function initSelfieForm() {
         selfieSuccess = 'Aktivitāte atjaunināta!';
       } else if (data.created) {
         selfieSuccess = 'Aktivitāte saglabāta!';
+        selfieAddedDays += 1;
       } else {
         selfieSuccess = 'Šodienas aktivitāte jau bija saglabāta.';
       }
