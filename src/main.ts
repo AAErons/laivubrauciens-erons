@@ -79,10 +79,13 @@ type MemeEntry = {
 type SelfieEntry = {
   id?: string;
   userId?: string;
+  firstName?: string;
+  lastName?: string;
+  name?: string;
   url: string;
   dateKey: string;
   showToOthers: boolean;
-  adminApproved: boolean;
+  moderationStatus: 'pending' | 'approved' | 'rejected';
   category: string;
   createdAt: string;
 };
@@ -458,6 +461,16 @@ const getActivityChallengeTotalDays = () => {
   return diffDays + 1;
 };
 
+const getModerationMeta = (status?: 'pending' | 'approved' | 'rejected') => {
+  if (status === 'approved') {
+    return { label: 'Apstiprināts', className: 'text-emerald-300 border-emerald-400/40' };
+  }
+  if (status === 'rejected') {
+    return { label: 'Noraidīts', className: 'text-rose-300 border-rose-400/40' };
+  }
+  return { label: 'Gaida apstiprinājumu', className: 'text-amber-300 border-amber-400/40' };
+};
+
 const selfieAdminPage = () => `
   <div class="mt-6 grid gap-4 sm:mt-8 sm:gap-5">
     <div class="rounded-2xl border border-white/10 bg-slate-950/40 p-4 sm:p-5">
@@ -489,11 +502,14 @@ const selfieAdminPage = () => `
                     <p class="mt-2 text-sm text-slate-200">${escapeHtml(entry.category || 'Aktivitāte')}</p>
                     <div class="mt-1 flex flex-wrap gap-2 text-[11px]">
                       <span class="rounded-full border border-white/10 px-2 py-0.5 text-slate-300">Lietotājs: ${escapeHtml(
-                        entry.userId ?? '—',
+                        `${entry.firstName ?? ''} ${entry.lastName ?? ''}`.trim() ||
+                          entry.name ||
+                          entry.userId ||
+                          '—',
                       )}</span>
                       <span class="rounded-full border border-white/10 px-2 py-0.5 ${
-                        entry.adminApproved ? 'text-emerald-300 border-emerald-400/40' : 'text-amber-300 border-amber-400/40'
-                      }">${entry.adminApproved ? 'Apstiprināts' : 'Gaida apstiprinājumu'}</span>
+                        getModerationMeta(entry.moderationStatus).className
+                      }">${getModerationMeta(entry.moderationStatus).label}</span>
                     </div>
                     <div class="mt-3 flex gap-2">
                       <button
@@ -611,9 +627,13 @@ const selfieChallengePage = () => `
                 <div class="rounded-xl border border-white/10 bg-slate-900/50 px-3 py-2 text-xs">
                   <p class="text-slate-500">Admin statuss</p>
                   <p class="mt-1 font-medium ${
-                    selfieTodayEntry.adminApproved ? 'text-emerald-300' : 'text-amber-300'
+                    selfieTodayEntry.moderationStatus === 'approved'
+                      ? 'text-emerald-300'
+                      : selfieTodayEntry.moderationStatus === 'rejected'
+                        ? 'text-rose-300'
+                        : 'text-amber-300'
                   }">
-                    ${selfieTodayEntry.adminApproved ? 'Apstiprināts' : 'Gaida apstiprinājumu'}
+                    ${getModerationMeta(selfieTodayEntry.moderationStatus).label}
                   </p>
                 </div>
               </div>
