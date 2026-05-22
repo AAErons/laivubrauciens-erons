@@ -485,12 +485,8 @@ const canEditSelfieEntry = (entry?: SelfieEntry | null) => entry?.moderationStat
 
 const activitiesPublicPage = () => `
   <section class="rounded-3xl border border-white/5 bg-white/5 p-5 sm:p-8">
-    <div class="mb-6 sm:mb-8">
-      <p class="text-xs uppercase tracking-[0.3em] text-slate-400">Aktivitātes</p>
-      <h1 class="mt-2 text-2xl font-semibold text-slate-50 sm:text-3xl">Kopienas aktivitāšu galerija</h1>
-      <p class="mt-2 max-w-2xl text-sm text-slate-300 sm:text-base">
-        Šeit redzamas visas aktivitātes, kurām ir admin apstiprinājums un atļauta publiska redzamība.
-      </p>
+    <div class="mb-6 text-center sm:mb-8">
+      <h1 class="text-2xl font-semibold text-slate-50 sm:text-3xl">Šodienas aktivitātes</h1>
     </div>
     ${
       activitiesLoading && !activitiesLoaded
