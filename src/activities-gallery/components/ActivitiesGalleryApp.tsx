@@ -11,7 +11,7 @@ type ActivitiesGalleryAppProps = {
 };
 
 export function ActivitiesGalleryApp({ apiBaseUrl }: ActivitiesGalleryAppProps) {
-  const { entries, isLoading, error, isMockData } = useActivitiesData(apiBaseUrl);
+  const { entries, isLoading, error } = useActivitiesData(apiBaseUrl);
   const { pointerX, pointerY } = usePointerField();
   const [activeHoverIndex, setActiveHoverIndex] = useState<number | null>(null);
   const [activeIndex, setActiveIndex] = useState<number | null>(null);
@@ -116,9 +116,6 @@ export function ActivitiesGalleryApp({ apiBaseUrl }: ActivitiesGalleryAppProps) 
               <p className="mb-4 rounded-xl border border-amber-400/20 bg-amber-400/10 px-3 py-2 text-xs text-amber-100">
                 {error}
               </p>
-            ) : null}
-            {isMockData ? (
-              <p className="mb-4 text-xs uppercase tracking-[0.2em] text-amber-100/70">Demo režīms</p>
             ) : null}
             <div className="columns-1 gap-4 sm:columns-2 xl:columns-3">
               {entries.map((entry, index) => (

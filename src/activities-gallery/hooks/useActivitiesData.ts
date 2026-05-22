@@ -1,9 +1,9 @@
 import { useEffect, useMemo, useState } from 'react';
 
-import { MOCK_ACTIVITY_PHOTOS } from '../mockData';
 import type { ActivityPhoto } from '../types';
 
 type PublicApiEntry = {
+  id?: string;
   url?: string;
   category?: string;
   createdAt?: string;
@@ -13,7 +13,6 @@ export function useActivitiesData(apiBaseUrl: string) {
   const [entries, setEntries] = useState<ActivityPhoto[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [isMockData, setIsMockData] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -30,7 +29,7 @@ export function useActivitiesData(apiBaseUrl: string) {
         const normalized = (data.entries ?? [])
           .filter((entry) => Boolean(entry.url))
           .map((entry, index) => ({
-            id: `${entry.createdAt ?? 'activity'}-${index}`,
+            id: entry.id?.trim() || `${entry.createdAt ?? 'activity'}-${index}`,
             url: entry.url as string,
             category: entry.category?.trim() || 'Aktivitāte',
             createdAt: entry.createdAt ?? new Date().toISOString(),
@@ -39,21 +38,13 @@ export function useActivitiesData(apiBaseUrl: string) {
         if (cancelled) {
           return;
         }
-        if (!normalized.length) {
-          setEntries(MOCK_ACTIVITY_PHOTOS);
-          setIsMockData(true);
-        } else {
-          setEntries(normalized);
-          setIsMockData(false);
-        }
+        setEntries(normalized);
       } catch {
         if (cancelled) {
           return;
         }
-        // Keep the gallery visually testable even if API is unavailable.
-        setEntries(MOCK_ACTIVITY_PHOTOS);
-        setIsMockData(true);
-        setError('Neizdevās ielādēt aktivitāšu foto no servera, parādām demonstrācijas galeriju.');
+        setEntries([]);
+        setError('Neizdevās ielādēt aktivitāšu foto no servera.');
       } finally {
         if (!cancelled) {
           setIsLoading(false);
@@ -73,5 +64,5 @@ export function useActivitiesData(apiBaseUrl: string) {
     [entries],
   );
 
-  return { entries: sortedEntries, isLoading, error, isMockData };
+  return { entries: sortedEntries, isLoading, error };
 }
