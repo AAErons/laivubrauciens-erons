@@ -404,9 +404,9 @@ const getProfileDefaults = () => {
 };
 
 const profileTabsNav = (activeTab: 'profile' | 'selfie') => `
-  <nav class="mt-6 grid w-full grid-cols-2 gap-2 text-xs sm:gap-3 sm:text-sm">
+  <nav class="mt-5 grid w-full grid-cols-1 gap-2 text-[11px] sm:mt-6 sm:grid-cols-2 sm:gap-3 sm:text-sm">
     <button
-      class="min-h-10 rounded-2xl border px-3 py-2 text-center transition sm:min-h-11 ${
+      class="min-h-10 w-full rounded-2xl border px-3 py-2 text-center leading-tight transition sm:min-h-11 ${
         activeTab === 'profile'
           ? 'border-white/30 bg-slate-900/80 text-white'
           : 'border-white/10 bg-slate-950/30 text-slate-300 hover:border-white/30 hover:bg-slate-900/40'
@@ -417,7 +417,7 @@ const profileTabsNav = (activeTab: 'profile' | 'selfie') => `
       Profils
     </button>
     <button
-      class="min-h-10 rounded-2xl border px-3 py-2 text-center transition sm:min-h-11 ${
+      class="min-h-10 w-full rounded-2xl border px-3 py-2 text-center leading-tight transition sm:min-h-11 ${
         activeTab === 'selfie'
           ? 'border-white/30 bg-slate-900/80 text-white'
           : 'border-white/10 bg-slate-950/30 text-slate-300 hover:border-white/30 hover:bg-slate-900/40'
@@ -431,8 +431,8 @@ const profileTabsNav = (activeTab: 'profile' | 'selfie') => `
 `;
 
 const selfieChallengePage = () => `
-  <div class="mt-8 grid gap-5">
-    <div class="rounded-2xl border border-white/10 bg-slate-950/40 p-5">
+  <div class="mt-6 grid gap-4 sm:mt-8 sm:gap-5">
+    <div class="rounded-2xl border border-white/10 bg-slate-950/40 p-4 sm:p-5">
       <p class="text-xs uppercase tracking-[0.2em] text-slate-500">Dienas ierobežojums</p>
       <p class="mt-2 text-sm text-slate-200">
         Vari augšupielādēt vienu aktivitāti dienā.
@@ -441,7 +441,7 @@ const selfieChallengePage = () => `
         selfieTodayEntry
           ? `<div class="mt-4 grid gap-4 sm:grid-cols-[180px,1fr]">
               <img
-                class="h-44 w-full rounded-2xl border border-white/10 object-cover sm:h-36"
+                class="h-40 w-full rounded-2xl border border-white/10 object-cover sm:h-36"
                 src="${escapeHtml(selfieTodayEntry.url)}"
                 alt="Šodienas selfie"
               />
@@ -463,12 +463,12 @@ const selfieChallengePage = () => `
           : ''
       }
     </div>
-    <div class="rounded-2xl border border-white/10 bg-slate-950/40 p-5">
+    <div class="rounded-2xl border border-white/10 bg-slate-950/40 p-4 sm:p-5">
       <div class="grid gap-4 sm:grid-cols-2">
         <label class="flex flex-col gap-2 text-xs uppercase tracking-[0.2em] text-slate-500 sm:col-span-2">
           Foto
           <input
-            class="block text-sm text-slate-300 file:mr-4 file:rounded-full file:border-0 file:bg-slate-100 file:px-4 file:py-2 file:text-sm file:font-medium file:text-slate-900 hover:file:bg-white"
+            class="block w-full min-w-0 text-sm text-slate-300 file:mr-3 file:rounded-full file:border-0 file:bg-slate-100 file:px-3 file:py-2 file:text-xs file:font-medium file:text-slate-900 hover:file:bg-white sm:file:mr-4 sm:file:px-4 sm:file:text-sm"
             id="selfie-image"
             type="file"
             accept="image/*"
@@ -478,7 +478,7 @@ const selfieChallengePage = () => `
         <label class="flex flex-col gap-2 text-xs uppercase tracking-[0.2em] text-slate-500">
           Aktivitāte
           <select
-            class="rounded-2xl border border-slate-700/70 bg-slate-950/70 px-4 py-3 text-sm text-slate-200 focus:border-slate-500 focus:outline-none"
+            class="w-full min-w-0 rounded-2xl border border-slate-700/70 bg-slate-950/70 px-4 py-3 text-sm text-slate-200 focus:border-slate-500 focus:outline-none"
             id="selfie-activity"
             ${selfieTodayEntry && !selfieEditMode ? 'disabled' : ''}
           >
@@ -507,9 +507,9 @@ const selfieChallengePage = () => `
       ${
         selfieSuccess ? `<p class="mt-4 text-sm text-emerald-300">${escapeHtml(selfieSuccess)}</p>` : ''
       }
-      <div class="mt-5 flex flex-wrap gap-3">
+      <div class="mt-5 flex flex-wrap gap-2 sm:gap-3">
         <button
-          class="rounded-full bg-slate-100 px-5 py-2 text-sm font-medium text-slate-900 transition hover:bg-white disabled:cursor-not-allowed disabled:opacity-60"
+          class="w-full rounded-full bg-slate-100 px-5 py-2 text-sm font-medium text-slate-900 transition hover:bg-white disabled:cursor-not-allowed disabled:opacity-60 sm:w-auto"
           id="selfie-submit"
           type="button"
           ${selfieSubmitting || selfieLoading ? 'disabled' : ''}
@@ -529,7 +529,7 @@ const selfieChallengePage = () => `
         ${
           selfieTodayEntry && selfieEditMode
             ? `<button
-                class="rounded-full border border-slate-700/70 px-5 py-2 text-sm text-slate-200 transition hover:border-slate-500"
+                class="w-full rounded-full border border-slate-700/70 px-5 py-2 text-sm text-slate-200 transition hover:border-slate-500 sm:w-auto"
                 id="selfie-cancel-edit"
                 type="button"
               >
