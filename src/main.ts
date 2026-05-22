@@ -129,6 +129,7 @@ let profileError: string | null = null;
 let profileLoading = false;
 let profileUploading = false;
 let profileMode: 'view' | 'edit' = 'view';
+let profileTab: 'profile' | 'selfie' = 'profile';
 let firstTaskLoading = false;
 let firstTaskChecking = false;
 let firstTaskError: string | null = null;
@@ -311,6 +312,42 @@ const getProfileDefaults = () => {
   };
 };
 
+const profileTabsNav = (activeTab: 'profile' | 'selfie') => `
+  <nav class="mt-6 grid w-full grid-cols-2 gap-2 text-xs sm:gap-3 sm:text-sm">
+    <button
+      class="min-h-10 rounded-2xl border px-3 py-2 text-center transition sm:min-h-11 ${
+        activeTab === 'profile'
+          ? 'border-white/30 bg-slate-900/80 text-white'
+          : 'border-white/10 bg-slate-950/30 text-slate-300 hover:border-white/30 hover:bg-slate-900/40'
+      }"
+      data-profile-tab="profile"
+      type="button"
+    >
+      Profils
+    </button>
+    <button
+      class="min-h-10 rounded-2xl border px-3 py-2 text-center transition sm:min-h-11 ${
+        activeTab === 'selfie'
+          ? 'border-white/30 bg-slate-900/80 text-white'
+          : 'border-white/10 bg-slate-950/30 text-slate-300 hover:border-white/30 hover:bg-slate-900/40'
+      }"
+      data-profile-tab="selfie"
+      type="button"
+    >
+      Selfie challenge
+    </button>
+  </nav>
+`;
+
+const selfieChallengePage = () => `
+  <div class="mt-8 rounded-2xl border border-white/10 bg-slate-950/40 p-6 text-center">
+    <p class="text-sm uppercase tracking-[0.25em] text-slate-400">Selfie challenge</p>
+    <p class="mt-4 text-sm leading-relaxed text-slate-300">
+      Drīzumā šeit varēsi piedalīties selfie izaicinājumā.
+    </p>
+  </div>
+`;
+
 const profilePage = () => {
   const defaults = getProfileDefaults();
   const safeFirstName = escapeHtml(defaults.firstName);
@@ -341,7 +378,16 @@ const profilePage = () => {
             : `<div class="flex h-56 w-56 items-center justify-center rounded-full border border-white/10 text-xs uppercase tracking-[0.2em] text-slate-500">Foto</div>`
         }
       </div>
+      ${profileTabsNav(profileTab)}
   `;
+
+  if (profileTab === 'selfie') {
+    return `
+      ${header}
+      ${selfieChallengePage()}
+    </section>
+    `;
+  }
 
   if (profileMode === 'view') {
     return `
@@ -2691,6 +2737,25 @@ function initPasswordAuth() {
 function initProfileForm() {
   const user = currentUser;
   if (!user) {
+    return;
+  }
+
+  document.querySelectorAll('[data-profile-tab]').forEach((button) => {
+    button.addEventListener('click', () => {
+      const tab = (button as HTMLElement).dataset.profileTab as 'profile' | 'selfie' | undefined;
+      if (!tab || tab === profileTab) {
+        return;
+      }
+      profileTab = tab;
+      if (tab === 'selfie') {
+        profileMode = 'view';
+        profileError = null;
+      }
+      render();
+    });
+  });
+
+  if (profileTab !== 'profile') {
     return;
   }
 
