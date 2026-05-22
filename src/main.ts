@@ -435,31 +435,47 @@ const profileTabsNav = (activeTab: 'profile' | 'selfie') => `
 const selfieChallengePage = () => `
   <div class="mt-6 grid gap-4 sm:mt-8 sm:gap-5">
     <div class="rounded-2xl border border-white/10 bg-slate-950/40 p-4 sm:p-5">
-      <p class="text-xs uppercase tracking-[0.2em] text-slate-500">Dienas ierobežojums</p>
-      <p class="mt-2 text-sm text-slate-200">
-        Vari augšupielādēt vienu aktivitāti dienā.
+      <p class="text-xs uppercase tracking-[0.2em] text-slate-500">Informācija</p>
+      <p class="mt-2 text-sm text-slate-200">Vari augšupielādēt vienu aktivitāti dienā.</p>
+      <p class="mt-3 text-sm leading-relaxed text-slate-300">
+        Nofotografējiet sevi darot kādu aktivitāti, bildē jābūt kādam pierādijumam par datumu
+        (čeks ar šodienas datumu, telefons rādot šodienas datumu, šodienas avīze utt...).
       </p>
+    </div>
+    <div class="rounded-2xl border border-white/10 bg-slate-950/40 p-4 sm:p-5">
+      <p class="text-xs uppercase tracking-[0.2em] text-slate-500">Šodienas aktivitāte</p>
       ${
         selfieTodayEntry
-          ? `<div class="mt-4 grid gap-4 sm:grid-cols-[180px,1fr]">
-              <img
-                class="h-40 w-full rounded-2xl border border-white/10 object-cover sm:h-36"
-                src="${escapeHtml(selfieTodayEntry.url)}"
-                alt="Šodienas selfie"
-              />
-              <div class="grid content-start gap-2 text-sm text-slate-300">
-                <p>
-                  <span class="text-slate-500">Aktivitāte:</span>
-                  <span class="text-slate-100">${escapeHtml(selfieTodayEntry.category || '—')}</span>
-                </p>
-                <p>
-                  <span class="text-slate-500">Rādīt citiem:</span>
-                  <span class="text-slate-100">${selfieTodayEntry.showToOthers ? 'Jā' : 'Nē'}</span>
-                </p>
-                <p>
-                  <span class="text-slate-500">Admin apstiprināts:</span>
-                  <span class="text-slate-100">${selfieTodayEntry.adminApproved ? 'Jā' : 'Nē'}</span>
-                </p>
+          ? `<div class="mt-4 flex flex-col items-center gap-4">
+              <div class="relative w-full max-w-sm overflow-hidden rounded-2xl border border-white/10 bg-slate-900/40">
+                <img
+                  class="h-56 w-full object-cover sm:h-64"
+                  src="${escapeHtml(selfieTodayEntry.url)}"
+                  alt="Šodienas aktivitāte"
+                />
+                <div class="absolute inset-x-0 bottom-0 border-t border-white/15 bg-slate-950/80 px-4 py-2 text-center backdrop-blur-sm">
+                  <span class="text-xs uppercase tracking-[0.2em] text-slate-200">
+                    ${escapeHtml(selfieTodayEntry.category || 'Aktivitāte')}
+                  </span>
+                </div>
+              </div>
+              <div class="grid w-full max-w-sm gap-2 sm:grid-cols-2">
+                <div class="rounded-xl border border-white/10 bg-slate-900/50 px-3 py-2 text-xs">
+                  <p class="text-slate-500">Redzamība</p>
+                  <p class="mt-1 font-medium ${
+                    selfieTodayEntry.showToOthers ? 'text-emerald-300' : 'text-slate-200'
+                  }">
+                    ${selfieTodayEntry.showToOthers ? 'Rādīt citiem' : 'Nerādīt citiem'}
+                  </p>
+                </div>
+                <div class="rounded-xl border border-white/10 bg-slate-900/50 px-3 py-2 text-xs">
+                  <p class="text-slate-500">Admin statuss</p>
+                  <p class="mt-1 font-medium ${
+                    selfieTodayEntry.adminApproved ? 'text-emerald-300' : 'text-amber-300'
+                  }">
+                    ${selfieTodayEntry.adminApproved ? 'Apstiprināts' : 'Gaida apstiprinājumu'}
+                  </p>
+                </div>
               </div>
             </div>`
           : `<div class="mt-4 rounded-2xl border border-dashed border-white/10 bg-slate-950/30 p-4 text-sm text-slate-400">
