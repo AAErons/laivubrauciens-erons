@@ -1000,29 +1000,32 @@ const getRoute = () => {
   return path.startsWith('/') ? path : `/${path}`;
 };
 
+const RESULTS_TABS = ['pirmais', 'otrais', 'tresais', 'ceturtais'] as const;
+
 const getResultsRoute = () => {
   const hash = window.location.hash.replace('#', '');
   const path = hash ? (hash.split('?')[0] ?? '') : '';
   const normalized = path.startsWith('/') ? path : `/${path}`;
   const directPath = normalized.startsWith('/rezultati') ? normalized : '/rezultati';
   const subPath = directPath.replace('/rezultati', '').replace(/^\//, '');
-  return subPath || 'pirmais';
+  if (RESULTS_TABS.includes(subPath as (typeof RESULTS_TABS)[number])) {
+    return subPath;
+  }
+  return 'pirmais';
 };
 
 const resultsTabLabel = (tab: string) => {
   switch (tab) {
     case 'pirmais':
-      return 'Pirmais uzdevums';
+      return 'Uzdevums 1';
     case 'otrais':
-      return 'Otrais uzdevums';
+      return 'Uzdevums 2';
     case 'tresais':
-      return 'Trešais uzdevums';
+      return 'Uzdevums 3';
     case 'ceturtais':
-      return 'Ceturtais uzdevums';
-    case 'piektais':
-      return 'Piektais uzdevums';
+      return 'Uzdevums 4';
     default:
-      return 'Pirmais uzdevums';
+      return 'Uzdevums 1';
   }
 };
 
@@ -1631,7 +1634,7 @@ const memesPage = () => {
 
 const resultsPage = () => {
   const tab = getResultsRoute();
-  const tabs = ['pirmais', 'otrais', 'tresais', 'ceturtais', 'piektais'];
+  const tabs = [...RESULTS_TABS];
   const currentLabel = resultsTabLabel(tab);
   const isFirst = tab === 'pirmais';
   const isSecond = tab === 'otrais';
