@@ -1522,13 +1522,28 @@ const labiPage = () => `
 `;
 
 const getRoute = () => {
+  const normalizeRoutePath = (value: string) => {
+    const trimmed = value.trim();
+    const decoded = (() => {
+      try {
+        return decodeURIComponent(trimmed);
+      } catch {
+        return trimmed;
+      }
+    })();
+    const prefixed = decoded.startsWith('/') ? decoded : `/${decoded}`;
+    const noTrailing = prefixed.replace(/\/+$/g, '');
+    const normalized = noTrailing || '/';
+    return normalized.toLowerCase();
+  };
+
   const hash = window.location.hash.replace('#', '');
   if (hash) {
     const [pathPart] = hash.split('?');
-    return pathPart.startsWith('/') ? pathPart : `/${pathPart}`;
+    return normalizeRoutePath(pathPart ?? '/');
   }
   const path = window.location.pathname || '/';
-  return path.startsWith('/') ? path : `/${path}`;
+  return normalizeRoutePath(path);
 };
 
 const RESULTS_TABS = ['pirmais', 'otrais', 'tresais', 'ceturtais'] as const;
