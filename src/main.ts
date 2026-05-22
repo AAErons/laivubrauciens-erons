@@ -95,6 +95,8 @@ const API_BASE_URL = import.meta.env.DEV
   ? import.meta.env.VITE_API_BASE_URL_DEV ?? 'http://localhost:3001'
   : import.meta.env.VITE_API_BASE_URL ?? '';
 const MEME_YEARS = [2020, 2021, 2022, 2023, 2024, 2025];
+const SELFIE_MAX_FILE_SIZE_BYTES = 10 * 1024 * 1024;
+const SELFIE_FILE_SIZE_ERROR = 'bildes maksimālais izmērs ir 10mb.';
 const SELFIE_ACTIVITIES = [
   'Pastaiga',
   'Riteņbrauciens',
@@ -471,6 +473,8 @@ const getModerationMeta = (status?: 'pending' | 'approved' | 'rejected') => {
   return { label: 'Gaida apstiprinājumu', className: 'text-amber-300 border-amber-400/40' };
 };
 
+const canEditSelfieEntry = (entry?: SelfieEntry | null) => entry?.moderationStatus !== 'approved';
+
 const selfieAdminPage = () => `
   <div class="mt-6 grid gap-4 sm:mt-8 sm:gap-5">
     <div class="rounded-2xl border border-white/10 bg-slate-950/40 p-4 sm:p-5">
@@ -656,7 +660,7 @@ const selfieChallengePage = () => `
           : ''
       }
       ${
-        selfieTodayEntry && !selfieEditMode
+        selfieTodayEntry && !selfieEditMode && canEditSelfieEntry(selfieTodayEntry)
           ? `<div class="mt-5">
               <button
                 class="w-full rounded-full bg-slate-100 px-5 py-2 text-sm font-medium text-slate-900 transition hover:bg-white sm:w-auto"
@@ -668,9 +672,15 @@ const selfieChallengePage = () => `
             </div>`
           : ''
       }
+      ${
+        selfieTodayEntry && !canEditSelfieEntry(selfieTodayEntry)
+          ? `<p class="mt-5 text-sm text-slate-300">Šī aktivitāte ir apstiprināta, tāpēc to vairs nevar rediģēt.</p>`
+          : ''
+      }
     </div>
     ${
-      (!selfieTodayEntry && selfieFormOpen) || (selfieTodayEntry && selfieEditMode)
+      (!selfieTodayEntry && selfieFormOpen) ||
+      (selfieTodayEntry && selfieEditMode && canEditSelfieEntry(selfieTodayEntry))
         ? `<div class="rounded-2xl border border-white/10 bg-slate-950/40 p-4 sm:p-5">
       <div class="grid gap-4 sm:grid-cols-2">
         <label class="flex flex-col gap-2 text-xs uppercase tracking-[0.2em] text-slate-500 sm:col-span-2">
@@ -680,7 +690,7 @@ const selfieChallengePage = () => `
             id="selfie-image"
             type="file"
             accept="image/*"
-            ${selfieTodayEntry && !selfieEditMode ? 'disabled' : ''}
+            ${selfieTodayEntry && (!selfieEditMode || !canEditSelfieEntry(selfieTodayEntry)) ? 'disabled' : ''}
           />
         </label>
         <label class="flex flex-col gap-2 text-xs uppercase tracking-[0.2em] text-slate-500">
@@ -688,7 +698,7 @@ const selfieChallengePage = () => `
           <select
             class="w-full min-w-0 rounded-2xl border border-slate-700/70 bg-slate-950/70 px-4 py-3 text-sm text-slate-200 focus:border-slate-500 focus:outline-none"
             id="selfie-activity"
-            ${selfieTodayEntry && !selfieEditMode ? 'disabled' : ''}
+            ${selfieTodayEntry && (!selfieEditMode || !canEditSelfieEntry(selfieTodayEntry)) ? 'disabled' : ''}
           >
             ${SELFIE_ACTIVITIES.map(
               (activity) =>
@@ -704,7 +714,7 @@ const selfieChallengePage = () => `
             id="selfie-show"
             type="checkbox"
             ${selfieShowToOthers ? 'checked' : ''}
-            ${selfieTodayEntry && !selfieEditMode ? 'disabled' : ''}
+            ${selfieTodayEntry && (!selfieEditMode || !canEditSelfieEntry(selfieTodayEntry)) ? 'disabled' : ''}
           />
           Rādīt citiem
         </label>
@@ -3226,6 +3236,12 @@ function initSelfieForm() {
   if (openFormButton) {
     openFormButton.addEventListener('click', () => {
       if (selfieTodayEntry) {
+        if (!canEditSelfieEntry(selfieTodayEntry)) {
+          selfieError = 'Apstiprinātu aktivitāti nevar rediģēt.';
+          selfieSuccess = null;
+          render();
+          return;
+        }
         selfieEditMode = true;
       } else {
         selfieFormOpen = true;
@@ -3244,6 +3260,22 @@ function initSelfieForm() {
   if (showInput) {
     showInput.addEventListener('change', () => {
       selfieShowToOthers = showInput.checked;
+    });
+  }
+  if (fileInput) {
+    fileInput.addEventListener('change', () => {
+      const selectedFile = fileInput.files?.[0];
+      if (selectedFile && selectedFile.size > SELFIE_MAX_FILE_SIZE_BYTES) {
+        fileInput.value = '';
+        selfieError = SELFIE_FILE_SIZE_ERROR;
+        selfieSuccess = null;
+        render();
+        return;
+      }
+      if (selfieError === SELFIE_FILE_SIZE_ERROR) {
+        selfieError = null;
+        render();
+      }
     });
   }
 
@@ -3289,6 +3321,12 @@ function initSelfieForm() {
 
   window.submitSelfie = async () => {
     if (selfieTodayEntry && !selfieEditMode) {
+      if (!canEditSelfieEntry(selfieTodayEntry)) {
+        selfieError = 'Apstiprinātu aktivitāti nevar rediģēt.';
+        selfieSuccess = null;
+        render();
+        return;
+      }
       selfieEditMode = true;
       selfieFormOpen = false;
       selfieError = null;
@@ -3304,6 +3342,12 @@ function initSelfieForm() {
       return;
     }
     const selectedFile = fileInput.files?.[0];
+    if (selectedFile && selectedFile.size > SELFIE_MAX_FILE_SIZE_BYTES) {
+      selfieError = SELFIE_FILE_SIZE_ERROR;
+      selfieSuccess = null;
+      render();
+      return;
+    }
     if (!selfieTodayEntry && !selectedFile) {
       selfieError = 'Lūdzu izvēlies attēlu.';
       selfieSuccess = null;
@@ -3339,6 +3383,18 @@ function initSelfieForm() {
         }),
       });
       if (!response.ok) {
+        if (response.status === 409) {
+          selfieError = 'Apstiprinātu aktivitāti nevar rediģēt.';
+          selfieSubmitting = false;
+          render();
+          return;
+        }
+        if (response.status === 413) {
+          selfieError = SELFIE_FILE_SIZE_ERROR;
+          selfieSubmitting = false;
+          render();
+          return;
+        }
         throw new Error('Save failed');
       }
       const data = (await response.json()) as { entry?: SelfieEntry | null; created?: boolean };
