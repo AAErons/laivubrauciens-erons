@@ -197,6 +197,7 @@ const setCurrentUser = (user: UserProfile | null) => {
     selfieShowToOthers = false;
     selfieActivity = SELFIE_ACTIVITIES[0];
     selfieTodayEntry = null;
+    selfieEditMode = false;
   }
   render();
 };
@@ -219,6 +220,7 @@ let selfieSuccess: string | null = null;
 let selfieShowToOthers = false;
 let selfieActivity: string = SELFIE_ACTIVITIES[0];
 let selfieTodayEntry: SelfieEntry | null = null;
+let selfieEditMode = false;
 let firstTaskLoading = false;
 let firstTaskChecking = false;
 let firstTaskError: string | null = null;
@@ -470,7 +472,7 @@ const selfieChallengePage = () => `
             id="selfie-image"
             type="file"
             accept="image/*"
-            ${selfieTodayEntry ? 'disabled' : ''}
+            ${selfieTodayEntry && !selfieEditMode ? 'disabled' : ''}
           />
         </label>
         <label class="flex flex-col gap-2 text-xs uppercase tracking-[0.2em] text-slate-500">
@@ -478,7 +480,7 @@ const selfieChallengePage = () => `
           <select
             class="rounded-2xl border border-slate-700/70 bg-slate-950/70 px-4 py-3 text-sm text-slate-200 focus:border-slate-500 focus:outline-none"
             id="selfie-activity"
-            ${selfieTodayEntry ? 'disabled' : ''}
+            ${selfieTodayEntry && !selfieEditMode ? 'disabled' : ''}
           >
             ${SELFIE_ACTIVITIES.map(
               (activity) =>
@@ -494,7 +496,7 @@ const selfieChallengePage = () => `
             id="selfie-show"
             type="checkbox"
             ${selfieShowToOthers ? 'checked' : ''}
-            ${selfieTodayEntry ? 'disabled' : ''}
+            ${selfieTodayEntry && !selfieEditMode ? 'disabled' : ''}
           />
           Rādīt citiem
         </label>
@@ -505,12 +507,12 @@ const selfieChallengePage = () => `
       ${
         selfieSuccess ? `<p class="mt-4 text-sm text-emerald-300">${escapeHtml(selfieSuccess)}</p>` : ''
       }
-      <div class="mt-5">
+      <div class="mt-5 flex flex-wrap gap-3">
         <button
           class="rounded-full bg-slate-100 px-5 py-2 text-sm font-medium text-slate-900 transition hover:bg-white disabled:cursor-not-allowed disabled:opacity-60"
           id="selfie-submit"
           type="button"
-          ${selfieSubmitting || selfieLoading || selfieTodayEntry ? 'disabled' : ''}
+          ${selfieSubmitting || selfieLoading ? 'disabled' : ''}
         >
           ${
             selfieLoading
@@ -518,10 +520,23 @@ const selfieChallengePage = () => `
               : selfieSubmitting
                 ? 'Saglabājam...'
                 : selfieTodayEntry
-                  ? 'Šodien jau augšupielādēts'
+                  ? selfieEditMode
+                    ? 'Saglabāt izmaiņas'
+                    : 'Rediģēt aktivitāti'
                   : 'Saglabāt aktivitāti'
           }
         </button>
+        ${
+          selfieTodayEntry && selfieEditMode
+            ? `<button
+                class="rounded-full border border-slate-700/70 px-5 py-2 text-sm text-slate-200 transition hover:border-slate-500"
+                id="selfie-cancel-edit"
+                type="button"
+              >
+                Atcelt
+              </button>`
+            : ''
+        }
       </div>
     </div>
   </div>
@@ -2919,6 +2934,7 @@ function initSelfieForm() {
   }
 
   const submitButton = document.getElementById('selfie-submit');
+  const cancelEditButton = document.getElementById('selfie-cancel-edit');
   const activityInput = document.getElementById('selfie-activity') as HTMLSelectElement | null;
   const showInput = document.getElementById('selfie-show') as HTMLInputElement | null;
   const fileInput = document.getElementById('selfie-image') as HTMLInputElement | null;
@@ -2956,6 +2972,7 @@ function initSelfieForm() {
       if (selfieTodayEntry) {
         selfieShowToOthers = selfieTodayEntry.showToOthers;
         selfieActivity = selfieTodayEntry.category || SELFIE_ACTIVITIES[0];
+        selfieEditMode = false;
       }
       selfieLoaded = true;
     } catch {
@@ -2967,14 +2984,23 @@ function initSelfieForm() {
   };
 
   window.submitSelfie = async () => {
-    if (!fileInput || !fileInput.files?.[0]) {
-      selfieError = 'Lūdzu izvēlies attēlu.';
+    if (selfieTodayEntry && !selfieEditMode) {
+      selfieEditMode = true;
+      selfieError = null;
       selfieSuccess = null;
       render();
       return;
     }
-    if (selfieTodayEntry) {
-      selfieError = 'Šodienas selfie jau ir saglabāts.';
+
+    if (!fileInput) {
+      selfieError = 'Neizdevās nolasīt attēla lauku.';
+      selfieSuccess = null;
+      render();
+      return;
+    }
+    const selectedFile = fileInput.files?.[0];
+    if (!selfieTodayEntry && !selectedFile) {
+      selfieError = 'Lūdzu izvēlies attēlu.';
       selfieSuccess = null;
       render();
       return;
@@ -2993,9 +3019,10 @@ function initSelfieForm() {
     selfieSuccess = null;
     render();
     try {
-      const imageBase64 = await toBase64(fileInput.files[0]);
-      const response = await fetch(`${API_BASE_URL}/selfie`, {
-        method: 'POST',
+      const imageBase64 = selectedFile ? await toBase64(selectedFile) : undefined;
+      const isUpdate = Boolean(selfieTodayEntry);
+      const response = await fetch(`${API_BASE_URL}${isUpdate ? '/selfie/me/today' : '/selfie'}`, {
+        method: isUpdate ? 'PUT' : 'POST',
         headers: {
           'Content-Type': 'application/json',
           Authorization: `Bearer ${authToken}`,
@@ -3011,11 +3038,14 @@ function initSelfieForm() {
       }
       const data = (await response.json()) as { entry?: SelfieEntry | null; created?: boolean };
       selfieTodayEntry = data.entry ?? null;
-      if (data.created) {
+      if (isUpdate) {
+        selfieSuccess = 'Aktivitāte atjaunināta!';
+      } else if (data.created) {
         selfieSuccess = 'Selfie saglabāts!';
       } else {
         selfieSuccess = 'Šodienas selfie jau bija saglabāts.';
       }
+      selfieEditMode = false;
     } catch {
       selfieError = 'Neizdevās saglabāt selfie.';
     } finally {
@@ -3027,6 +3057,19 @@ function initSelfieForm() {
   if (submitButton) {
     submitButton.addEventListener('click', () => {
       window.submitSelfie?.();
+    });
+  }
+  if (cancelEditButton) {
+    cancelEditButton.addEventListener('click', () => {
+      if (!selfieTodayEntry) {
+        return;
+      }
+      selfieShowToOthers = selfieTodayEntry.showToOthers;
+      selfieActivity = selfieTodayEntry.category || SELFIE_ACTIVITIES[0];
+      selfieEditMode = false;
+      selfieError = null;
+      selfieSuccess = null;
+      render();
     });
   }
 
