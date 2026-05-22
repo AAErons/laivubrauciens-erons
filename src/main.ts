@@ -1017,15 +1017,15 @@ const getResultsRoute = () => {
 const resultsTabLabel = (tab: string) => {
   switch (tab) {
     case 'pirmais':
-      return 'Uzdevums 1';
+      return 'Pirmais uzdevums';
     case 'otrais':
-      return 'Uzdevums 2';
+      return 'Otrais uzdevums';
     case 'tresais':
-      return 'Uzdevums 3';
+      return 'Trešais uzdevums';
     case 'ceturtais':
-      return 'Uzdevums 4';
+      return 'Ceturtais uzdevums';
     default:
-      return 'Uzdevums 1';
+      return 'Pirmais uzdevums';
   }
 };
 
@@ -1689,13 +1689,13 @@ const resultsPage = () => {
           </h2>
           <span class="text-xs uppercase tracking-[0.3em] text-slate-500">${currentLabel}</span>
         </div>
-        <nav class="flex flex-wrap gap-2 text-xs sm:text-sm">
+        <nav class="grid w-full grid-cols-2 gap-2 text-xs sm:grid-cols-4 sm:gap-3 sm:text-sm">
           ${tabs
             .map((item) => {
               const isActive = item === tab;
               return `
                 <a
-                  class="rounded-t-2xl border border-b-0 px-3 py-2 transition ${
+                  class="flex min-h-10 w-full items-center justify-center rounded-t-2xl border border-b-0 px-2 py-2 text-center transition sm:min-h-11 sm:px-3 ${
                     isActive
                       ? 'border-white/30 bg-slate-900/80 text-white shadow-[0_-1px_0_0_rgba(255,255,255,0.12)_inset]'
                       : 'border-white/10 bg-slate-950/30 text-slate-300 hover:border-white/30 hover:bg-slate-900/40'
