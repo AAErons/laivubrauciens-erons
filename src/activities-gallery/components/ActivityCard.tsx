@@ -30,12 +30,6 @@ export const ActivityCard = memo(function ActivityCard({
   const idleDuration = useMemo(() => 9 + (index % 5), [index]);
   const isNeighbor = activeIndex !== null && activeIndex !== index && Math.abs(activeIndex - index) <= 2;
   const cardHeightClass = index % 7 === 0 ? 'aspect-[4/6]' : index % 5 === 0 ? 'aspect-[5/6]' : 'aspect-[4/5]';
-  const dateLabel = new Date(photo.createdAt).toLocaleDateString('lv-LV', {
-    day: '2-digit',
-    month: 'short',
-    year: 'numeric',
-  });
-
   return (
     <motion.div
       className="mb-4 break-inside-avoid"
@@ -80,12 +74,6 @@ export const ActivityCard = memo(function ActivityCard({
           <div className="pointer-events-none absolute inset-x-0 bottom-0 bg-gradient-to-t from-slate-950/85 via-slate-950/30 to-transparent px-3 pb-2 pt-12">
             <p className="truncate text-sm font-medium tracking-wide text-slate-100">{photo.category}</p>
           </div>
-        </div>
-        <div className="flex items-center justify-between px-1.5 pb-0.5 pt-2">
-          <p className="text-[11px] italic tracking-wide text-[#4c3f2c]">{dateLabel}</p>
-          <span className="rounded-full border border-amber-900/25 px-2 py-[2px] text-[10px] font-medium uppercase tracking-[0.14em] text-[#7c5f2f]">
-            apstiprināts
-          </span>
         </div>
       </motion.button>
     </motion.div>
