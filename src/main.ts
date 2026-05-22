@@ -3019,12 +3019,56 @@ function initSelfieForm() {
         reader.readAsDataURL(file);
       });
 
+    // Camera files on mobile are often HEIC/HEIF. We normalize to JPEG when possible.
+    const toUploadImage = async (file: File) => {
+      const original = await toBase64(file);
+      const mime = (file.type || '').toLowerCase();
+      if (!mime.startsWith('image/') || mime.includes('gif') || mime.includes('svg')) {
+        return original;
+      }
+      if (typeof createImageBitmap !== 'function') {
+        return original;
+      }
+      try {
+        const bitmap = await createImageBitmap(file);
+        const maxSize = 2300;
+        const scale = Math.min(1, maxSize / Math.max(bitmap.width, bitmap.height));
+        const targetWidth = Math.max(1, Math.round(bitmap.width * scale));
+        const targetHeight = Math.max(1, Math.round(bitmap.height * scale));
+        const canvas = document.createElement('canvas');
+        canvas.width = targetWidth;
+        canvas.height = targetHeight;
+        const context = canvas.getContext('2d');
+        if (!context) {
+          bitmap.close();
+          return original;
+        }
+        context.drawImage(bitmap, 0, 0, targetWidth, targetHeight);
+        bitmap.close();
+        return canvas.toDataURL('image/jpeg', 0.9);
+      } catch {
+        return original;
+      }
+    };
+
+    const parseApiError = async (response: Response) => {
+      try {
+        const payload = (await response.json()) as { message?: string | string[] };
+        if (Array.isArray(payload.message)) {
+          return payload.message[0] ?? null;
+        }
+        return payload.message ?? null;
+      } catch {
+        return null;
+      }
+    };
+
     selfieSubmitting = true;
     selfieError = null;
     selfieSuccess = null;
     render();
     try {
-      const imageBase64 = selectedFile ? await toBase64(selectedFile) : undefined;
+      const imageBase64 = selectedFile ? await toUploadImage(selectedFile) : undefined;
       const isUpdate = Boolean(selfieTodayEntry);
       const response = await fetch(`${API_BASE_URL}${isUpdate ? '/selfie/me/today' : '/selfie'}`, {
         method: isUpdate ? 'PUT' : 'POST',
@@ -3047,6 +3091,13 @@ function initSelfieForm() {
         }
         if (response.status === 413) {
           selfieError = SELFIE_FILE_SIZE_ERROR;
+          selfieSubmitting = false;
+          render();
+          return;
+        }
+        const apiError = await parseApiError(response);
+        if (apiError) {
+          selfieError = apiError;
           selfieSubmitting = false;
           render();
           return;
