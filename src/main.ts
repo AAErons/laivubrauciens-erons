@@ -198,6 +198,7 @@ const setCurrentUser = (user: UserProfile | null) => {
     selfieActivity = SELFIE_ACTIVITIES[0];
     selfieTodayEntry = null;
     selfieEditMode = false;
+    selfieFormOpen = false;
   }
   render();
 };
@@ -221,6 +222,7 @@ let selfieShowToOthers = false;
 let selfieActivity: string = SELFIE_ACTIVITIES[0];
 let selfieTodayEntry: SelfieEntry | null = null;
 let selfieEditMode = false;
+let selfieFormOpen = false;
 let firstTaskLoading = false;
 let firstTaskChecking = false;
 let firstTaskError: string | null = null;
@@ -460,10 +462,40 @@ const selfieChallengePage = () => `
                 </p>
               </div>
             </div>`
+          : `<div class="mt-4 rounded-2xl border border-dashed border-white/10 bg-slate-950/30 p-4 text-sm text-slate-400">
+              Šodienas aktivitāte vēl nav augšupielādēta.
+            </div>`
+      }
+      ${
+        !selfieTodayEntry && !selfieFormOpen
+          ? `<div class="mt-5">
+              <button
+                class="w-full rounded-full bg-slate-100 px-5 py-2 text-sm font-medium text-slate-900 transition hover:bg-white sm:w-auto"
+                id="selfie-open-form"
+                type="button"
+              >
+                Augšupielādēt aktivitāti
+              </button>
+            </div>`
+          : ''
+      }
+      ${
+        selfieTodayEntry && !selfieEditMode
+          ? `<div class="mt-5">
+              <button
+                class="w-full rounded-full bg-slate-100 px-5 py-2 text-sm font-medium text-slate-900 transition hover:bg-white sm:w-auto"
+                id="selfie-open-form"
+                type="button"
+              >
+                Rediģēt aktivitāti
+              </button>
+            </div>`
           : ''
       }
     </div>
-    <div class="rounded-2xl border border-white/10 bg-slate-950/40 p-4 sm:p-5">
+    ${
+      (!selfieTodayEntry && selfieFormOpen) || (selfieTodayEntry && selfieEditMode)
+        ? `<div class="rounded-2xl border border-white/10 bg-slate-950/40 p-4 sm:p-5">
       <div class="grid gap-4 sm:grid-cols-2">
         <label class="flex flex-col gap-2 text-xs uppercase tracking-[0.2em] text-slate-500 sm:col-span-2">
           Foto
@@ -527,7 +559,7 @@ const selfieChallengePage = () => `
           }
         </button>
         ${
-          selfieTodayEntry && selfieEditMode
+          selfieEditMode || selfieFormOpen
             ? `<button
                 class="w-full rounded-full border border-slate-700/70 px-5 py-2 text-sm text-slate-200 transition hover:border-slate-500 sm:w-auto"
                 id="selfie-cancel-edit"
@@ -538,7 +570,9 @@ const selfieChallengePage = () => `
             : ''
         }
       </div>
-    </div>
+    </div>`
+        : ''
+    }
   </div>
 `;
 
@@ -2933,11 +2967,25 @@ function initSelfieForm() {
     return;
   }
 
+  const openFormButton = document.getElementById('selfie-open-form');
   const submitButton = document.getElementById('selfie-submit');
   const cancelEditButton = document.getElementById('selfie-cancel-edit');
   const activityInput = document.getElementById('selfie-activity') as HTMLSelectElement | null;
   const showInput = document.getElementById('selfie-show') as HTMLInputElement | null;
   const fileInput = document.getElementById('selfie-image') as HTMLInputElement | null;
+
+  if (openFormButton) {
+    openFormButton.addEventListener('click', () => {
+      if (selfieTodayEntry) {
+        selfieEditMode = true;
+      } else {
+        selfieFormOpen = true;
+      }
+      selfieError = null;
+      selfieSuccess = null;
+      render();
+    });
+  }
 
   if (activityInput) {
     activityInput.addEventListener('change', () => {
@@ -2973,6 +3021,7 @@ function initSelfieForm() {
         selfieShowToOthers = selfieTodayEntry.showToOthers;
         selfieActivity = selfieTodayEntry.category || SELFIE_ACTIVITIES[0];
         selfieEditMode = false;
+        selfieFormOpen = false;
       }
       selfieLoaded = true;
     } catch {
@@ -2986,6 +3035,7 @@ function initSelfieForm() {
   window.submitSelfie = async () => {
     if (selfieTodayEntry && !selfieEditMode) {
       selfieEditMode = true;
+      selfieFormOpen = false;
       selfieError = null;
       selfieSuccess = null;
       render();
@@ -3041,13 +3091,14 @@ function initSelfieForm() {
       if (isUpdate) {
         selfieSuccess = 'Aktivitāte atjaunināta!';
       } else if (data.created) {
-        selfieSuccess = 'Selfie saglabāts!';
+        selfieSuccess = 'Aktivitāte saglabāta!';
       } else {
-        selfieSuccess = 'Šodienas selfie jau bija saglabāts.';
+        selfieSuccess = 'Šodienas aktivitāte jau bija saglabāta.';
       }
       selfieEditMode = false;
+      selfieFormOpen = false;
     } catch {
-      selfieError = 'Neizdevās saglabāt selfie.';
+      selfieError = 'Neizdevās saglabāt aktivitāti.';
     } finally {
       selfieSubmitting = false;
       render();
@@ -3061,12 +3112,12 @@ function initSelfieForm() {
   }
   if (cancelEditButton) {
     cancelEditButton.addEventListener('click', () => {
-      if (!selfieTodayEntry) {
-        return;
+      if (selfieTodayEntry) {
+        selfieShowToOthers = selfieTodayEntry.showToOthers;
+        selfieActivity = selfieTodayEntry.category || SELFIE_ACTIVITIES[0];
       }
-      selfieShowToOthers = selfieTodayEntry.showToOthers;
-      selfieActivity = selfieTodayEntry.category || SELFIE_ACTIVITIES[0];
       selfieEditMode = false;
+      selfieFormOpen = false;
       selfieError = null;
       selfieSuccess = null;
       render();
