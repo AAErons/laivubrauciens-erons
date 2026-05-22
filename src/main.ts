@@ -423,7 +423,7 @@ const profileTabsNav = (activeTab: 'profile' | 'selfie') => `
       data-profile-tab="selfie"
       type="button"
     >
-      Selfie challenge
+      Aktivitātes izaicinājums
     </button>
   </nav>
 `;
@@ -433,7 +433,7 @@ const selfieChallengePage = () => `
     <div class="rounded-2xl border border-white/10 bg-slate-950/40 p-5">
       <p class="text-xs uppercase tracking-[0.2em] text-slate-500">Dienas ierobežojums</p>
       <p class="mt-2 text-sm text-slate-200">
-        Vari augšupielādēt vienu selfie dienā.
+        Vari augšupielādēt vienu aktivitāti dienā.
       </p>
       ${
         selfieTodayEntry
@@ -519,7 +519,7 @@ const selfieChallengePage = () => `
                 ? 'Saglabājam...'
                 : selfieTodayEntry
                   ? 'Šodien jau augšupielādēts'
-                  : 'Saglabāt selfie'
+                  : 'Saglabāt aktivitāti'
           }
         </button>
       </div>
