@@ -200,6 +200,12 @@ const setCurrentUser = (user: UserProfile | null) => {
     selfieEditMode = false;
     selfieFormOpen = false;
     selfieAddedDays = 0;
+    selfieHistoryOpen = false;
+    selfieHistoryLoading = false;
+    selfieHistoryLoaded = false;
+    selfieHistoryError = null;
+    selfieHistoryEntries = [];
+    selfieSelectedDate = null;
   }
   render();
 };
@@ -225,6 +231,12 @@ let selfieTodayEntry: SelfieEntry | null = null;
 let selfieEditMode = false;
 let selfieFormOpen = false;
 let selfieAddedDays = 0;
+let selfieHistoryOpen = false;
+let selfieHistoryLoading = false;
+let selfieHistoryLoaded = false;
+let selfieHistoryError: string | null = null;
+let selfieHistoryEntries: SelfieEntry[] = [];
+let selfieSelectedDate: string | null = null;
 let firstTaskLoading = false;
 let firstTaskChecking = false;
 let firstTaskError: string | null = null;
@@ -447,7 +459,146 @@ const getActivityChallengeTotalDays = () => {
   return diffDays + 1;
 };
 
+const getActivityStartDate = () => new Date(2026, 4, 25);
+
+const toDateKey = (date: Date) =>
+  `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(
+    date.getDate(),
+  ).padStart(2, '0')}`;
+
+const renderSelfieHistory = () => {
+  if (!selfieHistoryOpen) {
+    return '';
+  }
+  if (selfieHistoryLoading && !selfieHistoryLoaded) {
+    return `
+      <div class="mt-4 rounded-2xl border border-white/10 bg-slate-950/40 p-4">
+        <div class="h-3 w-40 animate-pulse rounded bg-slate-700/60"></div>
+        <div class="mt-4 grid grid-cols-7 gap-2">
+          ${Array.from({ length: 21 })
+            .map(
+              () =>
+                `<div class="h-12 animate-pulse rounded-xl border border-white/10 bg-slate-900/50"></div>`,
+            )
+            .join('')}
+        </div>
+      </div>
+    `;
+  }
+
+  if (selfieHistoryError) {
+    return `<div class="mt-4 rounded-2xl border border-rose-400/30 bg-rose-950/20 p-4 text-sm text-rose-300">${escapeHtml(
+      selfieHistoryError,
+    )}</div>`;
+  }
+
+  const start = getActivityStartDate();
+  const today = new Date();
+  const startDay = new Date(start.getFullYear(), start.getMonth(), start.getDate());
+  const todayDay = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+  const end = new Date(todayDay);
+  end.setDate(end.getDate() + 7);
+  const entriesByDate = new Map(selfieHistoryEntries.map((entry) => [entry.dateKey, entry]));
+  const selected =
+    (selfieSelectedDate ? entriesByDate.get(selfieSelectedDate) : null) ??
+    (selfieTodayEntry ? entriesByDate.get(selfieTodayEntry.dateKey) : null) ??
+    selfieHistoryEntries[0] ??
+    null;
+
+  const days: string[] = [];
+  const cursor = new Date(startDay);
+  while (cursor.getTime() <= end.getTime()) {
+    const dateKey = toDateKey(cursor);
+    const entry = entriesByDate.get(dateKey);
+    const isFuture = cursor.getTime() > todayDay.getTime();
+    const isPastMissing = !entry && cursor.getTime() < todayDay.getTime();
+    const isTodayMissing = !entry && cursor.getTime() === todayDay.getTime();
+    if (entry) {
+      days.push(`
+        <button
+          class="relative h-12 overflow-hidden rounded-xl border ${
+            selected?.dateKey === dateKey ? 'border-emerald-300/80 ring-1 ring-emerald-300/60' : 'border-white/20'
+          } bg-slate-900/60 transition hover:border-emerald-300/60"
+          type="button"
+          data-selfie-day="${dateKey}"
+          title="${escapeHtml(entry.category || 'Aktivitāte')}"
+        >
+          <img class="h-full w-full object-cover" src="${escapeHtml(entry.url)}" alt="${escapeHtml(
+            entry.category || 'Aktivitāte',
+          )}" />
+        </button>
+      `);
+    } else if (isFuture) {
+      days.push(`
+        <div class="flex h-12 items-center justify-center rounded-xl border border-sky-400/30 bg-sky-950/20 text-[11px] text-sky-200" title="Nākamā diena">
+          ⏳
+        </div>
+      `);
+    } else if (isPastMissing) {
+      days.push(`
+        <div class="flex h-12 items-center justify-center rounded-xl border border-rose-400/30 bg-rose-950/20 text-[11px] text-rose-300" title="Nav pievienota aktivitāte">
+          ❌
+        </div>
+      `);
+    } else if (isTodayMissing) {
+      days.push(`
+        <div class="flex h-12 items-center justify-center rounded-xl border border-amber-400/30 bg-amber-950/20 text-[11px] text-amber-200" title="Šodien vēl nav pievienots">
+          📷
+        </div>
+      `);
+    }
+    cursor.setDate(cursor.getDate() + 1);
+  }
+
+  return `
+    <div class="mt-4 rounded-2xl border border-white/10 bg-slate-950/40 p-4">
+      <p class="text-xs uppercase tracking-[0.2em] text-slate-500">Manu aktivitāšu kalendārs</p>
+      <div class="mt-4 grid grid-cols-7 gap-2">${days.join('')}</div>
+      ${
+        selected
+          ? `<div class="mt-5 rounded-2xl border border-white/10 bg-slate-900/50 p-3">
+              <p class="text-xs uppercase tracking-[0.2em] text-slate-500">${escapeHtml(selected.dateKey)}</p>
+              <img
+                class="mt-3 h-52 w-full rounded-xl border border-white/10 object-cover sm:h-64"
+                src="${escapeHtml(selected.url)}"
+                alt="${escapeHtml(selected.category || 'Aktivitāte')}"
+              />
+              <p class="mt-2 text-sm text-slate-200">${escapeHtml(selected.category || 'Aktivitāte')}</p>
+            </div>`
+          : ''
+      }
+    </div>
+  `;
+};
+
 const selfieChallengePage = () => `
+  ${
+    selfieLoading && !selfieLoaded
+      ? `<div class="mt-6 grid gap-4 sm:mt-8 sm:gap-5">
+          <div class="rounded-2xl border border-white/10 bg-slate-950/40 p-4 sm:p-5">
+            <div class="h-3 w-28 animate-pulse rounded bg-slate-700/60"></div>
+            <div class="mt-3 h-3 w-full animate-pulse rounded bg-slate-800/60"></div>
+            <div class="mt-2 h-3 w-11/12 animate-pulse rounded bg-slate-800/50"></div>
+            <div class="mt-4 grid grid-cols-2 gap-2">
+              <div class="h-14 animate-pulse rounded-xl border border-white/10 bg-slate-900/50"></div>
+              <div class="h-14 animate-pulse rounded-xl border border-white/10 bg-slate-900/50"></div>
+            </div>
+          </div>
+          <div class="rounded-2xl border border-white/10 bg-slate-950/40 p-4 sm:p-5">
+            <div class="h-3 w-36 animate-pulse rounded bg-slate-700/60"></div>
+            <div class="mt-4 h-56 animate-pulse rounded-2xl border border-white/10 bg-slate-900/50"></div>
+            <div class="mt-4 grid grid-cols-2 gap-2">
+              <div class="h-14 animate-pulse rounded-xl border border-white/10 bg-slate-900/50"></div>
+              <div class="h-14 animate-pulse rounded-xl border border-white/10 bg-slate-900/50"></div>
+            </div>
+          </div>
+        </div>`
+      : ``
+  }
+  ${
+    selfieLoading && !selfieLoaded
+      ? ''
+      : `
   <div class="mt-6 grid gap-4 sm:mt-8 sm:gap-5">
     <div class="rounded-2xl border border-white/10 bg-slate-950/40 p-4 sm:p-5">
       <p class="text-xs uppercase tracking-[0.2em] text-slate-500">Informācija</p>
@@ -466,6 +617,16 @@ const selfieChallengePage = () => `
           <p class="mt-1 text-sm font-semibold text-slate-100">${getActivityChallengeTotalDays()}</p>
         </div>
       </div>
+      <div class="mt-4">
+        <button
+          class="w-full rounded-full border border-slate-700/70 px-5 py-2 text-sm text-slate-200 transition hover:border-slate-500 sm:w-auto"
+          id="selfie-open-history"
+          type="button"
+        >
+          ${selfieHistoryOpen ? 'Paslēpt manas aktivitātes' : 'Skatīt manas aktivitātes'}
+        </button>
+      </div>
+      ${renderSelfieHistory()}
     </div>
     <div class="rounded-2xl border border-white/10 bg-slate-950/40 p-4 sm:p-5">
       <p class="text-xs uppercase tracking-[0.2em] text-slate-500">Šodienas aktivitāte</p>
@@ -615,6 +776,8 @@ const selfieChallengePage = () => `
         : ''
     }
   </div>
+  `
+  }
 `;
 
 const profilePage = () => {
@@ -3009,6 +3172,7 @@ function initSelfieForm() {
   }
 
   const openFormButton = document.getElementById('selfie-open-form');
+  const openHistoryButton = document.getElementById('selfie-open-history');
   const submitButton = document.getElementById('selfie-submit');
   const cancelEditButton = document.getElementById('selfie-cancel-edit');
   const activityInput = document.getElementById('selfie-activity') as HTMLSelectElement | null;
@@ -3038,6 +3202,37 @@ function initSelfieForm() {
       selfieShowToOthers = showInput.checked;
     });
   }
+
+  const loadSelfieHistory = async (force = false) => {
+    if ((selfieHistoryLoading || selfieHistoryLoaded) && !force) {
+      return;
+    }
+    selfieHistoryLoading = true;
+    selfieHistoryError = null;
+    render();
+    try {
+      const response = await fetch(`${API_BASE_URL}/selfie/me`, {
+        headers: {
+          Authorization: `Bearer ${authToken}`,
+        },
+        cache: 'no-store',
+      });
+      if (!response.ok) {
+        throw new Error('Failed to load history');
+      }
+      const data = (await response.json()) as { entries?: SelfieEntry[] };
+      selfieHistoryEntries = data.entries ?? [];
+      if (!selfieSelectedDate) {
+        selfieSelectedDate = selfieTodayEntry?.dateKey ?? selfieHistoryEntries[0]?.dateKey ?? null;
+      }
+      selfieHistoryLoaded = true;
+    } catch {
+      selfieHistoryError = 'Neizdevās ielādēt aktivitāšu kalendāru.';
+    } finally {
+      selfieHistoryLoading = false;
+      render();
+    }
+  };
 
   const loadTodayEntry = async (force = false) => {
     if ((selfieLoading || selfieLoaded) && !force) {
@@ -3069,9 +3264,13 @@ function initSelfieForm() {
         const statsData = (await statsResponse.json()) as { addedDays?: number };
         selfieAddedDays = Math.max(0, Number(statsData.addedDays ?? 0));
       }
+      if (selfieTodayEntry && !selfieSelectedDate) {
+        selfieSelectedDate = selfieTodayEntry.dateKey;
+      }
       selfieLoaded = true;
     } catch {
       selfieError = 'Neizdevās ielādēt šodienas selfie.';
+      selfieLoaded = true;
     } finally {
       selfieLoading = false;
       render();
@@ -3134,6 +3333,9 @@ function initSelfieForm() {
       }
       const data = (await response.json()) as { entry?: SelfieEntry | null; created?: boolean };
       selfieTodayEntry = data.entry ?? null;
+      if (selfieTodayEntry) {
+        selfieSelectedDate = selfieTodayEntry.dateKey;
+      }
       if (isUpdate) {
         selfieSuccess = 'Aktivitāte atjaunināta!';
       } else if (data.created) {
@@ -3144,6 +3346,9 @@ function initSelfieForm() {
       }
       selfieEditMode = false;
       selfieFormOpen = false;
+      if (selfieHistoryOpen || selfieHistoryLoaded) {
+        await loadSelfieHistory(true);
+      }
     } catch {
       selfieError = 'Neizdevās saglabāt aktivitāti.';
     } finally {
@@ -3157,6 +3362,26 @@ function initSelfieForm() {
       window.submitSelfie?.();
     });
   }
+  if (openHistoryButton) {
+    openHistoryButton.addEventListener('click', () => {
+      selfieHistoryOpen = !selfieHistoryOpen;
+      if (selfieHistoryOpen) {
+        loadSelfieHistory();
+      } else {
+        render();
+      }
+    });
+  }
+  document.querySelectorAll('[data-selfie-day]').forEach((button) => {
+    button.addEventListener('click', () => {
+      const key = (button as HTMLElement).dataset.selfieDay ?? null;
+      if (!key) {
+        return;
+      }
+      selfieSelectedDate = key;
+      render();
+    });
+  });
   if (cancelEditButton) {
     cancelEditButton.addEventListener('click', () => {
       if (selfieTodayEntry) {
