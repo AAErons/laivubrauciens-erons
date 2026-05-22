@@ -31,6 +31,7 @@ declare global {
     startGame?: () => void;
     restartGame?: () => void;
     selectUpgrade?: (choice: UpgradeChoice) => void;
+    submitSelfie?: () => void;
   }
 }
 
@@ -74,11 +75,82 @@ type MemeEntry = {
   createdAt: string;
 };
 
+type SelfieEntry = {
+  url: string;
+  dateKey: string;
+  showToOthers: boolean;
+  adminApproved: boolean;
+  category: string;
+  createdAt: string;
+};
+
 const GOOGLE_CLIENT_ID = '230576623376-0gdvkur7dt49lea75pq9am271r6scjdq.apps.googleusercontent.com';
 const API_BASE_URL = import.meta.env.DEV
   ? import.meta.env.VITE_API_BASE_URL_DEV ?? 'http://localhost:3001'
   : import.meta.env.VITE_API_BASE_URL ?? '';
 const MEME_YEARS = [2020, 2021, 2022, 2023, 2024, 2025];
+const SELFIE_ACTIVITIES = [
+  'Pastaiga',
+  'Riteņbrauciens',
+  'Treniņš',
+  'Pelde',
+  'Skriešana',
+  'Pārgājiens',
+  'Joga',
+  'Stiepšanās',
+  'Sporta spēles',
+  'Futbols',
+  'Basketbols',
+  'Volejbols',
+  'Teniss',
+  'Galda teniss',
+  'Skeitošana',
+  'Skrituļošana',
+  'Slidošana',
+  'Slēpošana',
+  'Snovošana',
+  'Airēšana',
+  'Smaiļošana',
+  'Makšķerēšana',
+  'Kempings',
+  'Pikniks',
+  'Dejošana',
+  'Meditācija',
+  'Lasīšana',
+  'Zīmēšana',
+  'Fotografēšana',
+  'Dārza darbi',
+  'Auto izbrauciens',
+  'Moto brauciens',
+  'Ceļošana',
+  'Filmu vakars',
+  'Video spēles',
+  'Galda spēles',
+  'Ēst gatavošana',
+  'Cepšana',
+  'Muzicēšana',
+  'Dziedāšana',
+  'Karaoke',
+  'Ballīte',
+  'Sauna',
+  'Spa apmeklējums',
+  'Iepirkšanās',
+  'Brīvprātīgais darbs',
+  'Suņa pastaiga',
+  'Geocaching',
+  'Orientēšanās',
+  'Kāpšana klinšu sienā',
+  'Fitness zāle',
+  'CrossFit',
+  'Bokss',
+  'Cīņas sports',
+  'Zirgu izjādes',
+  'Sērfošana',
+  'Niršana',
+  'SUPošana',
+  'Frisbijs',
+  'Badmintons',
+] as const;
 
 const loadUser = (): UserProfile | null => {
   const stored = localStorage.getItem('boat_trip_user');
@@ -116,6 +188,15 @@ const setCurrentUser = (user: UserProfile | null) => {
   if (!user) {
     authToken = null;
     saveAuthToken(null);
+    profileTab = 'profile';
+    selfieLoading = false;
+    selfieLoaded = false;
+    selfieSubmitting = false;
+    selfieError = null;
+    selfieSuccess = null;
+    selfieShowToOthers = false;
+    selfieActivity = SELFIE_ACTIVITIES[0];
+    selfieTodayEntry = null;
   }
   render();
 };
@@ -130,6 +211,14 @@ let profileLoading = false;
 let profileUploading = false;
 let profileMode: 'view' | 'edit' = 'view';
 let profileTab: 'profile' | 'selfie' = 'profile';
+let selfieLoading = false;
+let selfieLoaded = false;
+let selfieSubmitting = false;
+let selfieError: string | null = null;
+let selfieSuccess: string | null = null;
+let selfieShowToOthers = false;
+let selfieActivity: string = SELFIE_ACTIVITIES[0];
+let selfieTodayEntry: SelfieEntry | null = null;
 let firstTaskLoading = false;
 let firstTaskChecking = false;
 let firstTaskError: string | null = null;
@@ -340,11 +429,101 @@ const profileTabsNav = (activeTab: 'profile' | 'selfie') => `
 `;
 
 const selfieChallengePage = () => `
-  <div class="mt-8 rounded-2xl border border-white/10 bg-slate-950/40 p-6 text-center">
-    <p class="text-sm uppercase tracking-[0.25em] text-slate-400">Selfie challenge</p>
-    <p class="mt-4 text-sm leading-relaxed text-slate-300">
-      Drīzumā šeit varēsi piedalīties selfie izaicinājumā.
-    </p>
+  <div class="mt-8 grid gap-5">
+    <div class="rounded-2xl border border-white/10 bg-slate-950/40 p-5">
+      <p class="text-xs uppercase tracking-[0.2em] text-slate-500">Dienas ierobežojums</p>
+      <p class="mt-2 text-sm text-slate-200">
+        Vari augšupielādēt vienu selfie dienā.
+      </p>
+      ${
+        selfieTodayEntry
+          ? `<div class="mt-4 grid gap-4 sm:grid-cols-[180px,1fr]">
+              <img
+                class="h-44 w-full rounded-2xl border border-white/10 object-cover sm:h-36"
+                src="${escapeHtml(selfieTodayEntry.url)}"
+                alt="Šodienas selfie"
+              />
+              <div class="grid content-start gap-2 text-sm text-slate-300">
+                <p>
+                  <span class="text-slate-500">Aktivitāte:</span>
+                  <span class="text-slate-100">${escapeHtml(selfieTodayEntry.category || '—')}</span>
+                </p>
+                <p>
+                  <span class="text-slate-500">Rādīt citiem:</span>
+                  <span class="text-slate-100">${selfieTodayEntry.showToOthers ? 'Jā' : 'Nē'}</span>
+                </p>
+                <p>
+                  <span class="text-slate-500">Admin apstiprināts:</span>
+                  <span class="text-slate-100">${selfieTodayEntry.adminApproved ? 'Jā' : 'Nē'}</span>
+                </p>
+              </div>
+            </div>`
+          : ''
+      }
+    </div>
+    <div class="rounded-2xl border border-white/10 bg-slate-950/40 p-5">
+      <div class="grid gap-4 sm:grid-cols-2">
+        <label class="flex flex-col gap-2 text-xs uppercase tracking-[0.2em] text-slate-500 sm:col-span-2">
+          Foto
+          <input
+            class="block text-sm text-slate-300 file:mr-4 file:rounded-full file:border-0 file:bg-slate-100 file:px-4 file:py-2 file:text-sm file:font-medium file:text-slate-900 hover:file:bg-white"
+            id="selfie-image"
+            type="file"
+            accept="image/*"
+            ${selfieTodayEntry ? 'disabled' : ''}
+          />
+        </label>
+        <label class="flex flex-col gap-2 text-xs uppercase tracking-[0.2em] text-slate-500">
+          Aktivitāte
+          <select
+            class="rounded-2xl border border-slate-700/70 bg-slate-950/70 px-4 py-3 text-sm text-slate-200 focus:border-slate-500 focus:outline-none"
+            id="selfie-activity"
+            ${selfieTodayEntry ? 'disabled' : ''}
+          >
+            ${SELFIE_ACTIVITIES.map(
+              (activity) =>
+                `<option value="${escapeHtml(activity)}" ${
+                  selfieActivity === activity ? 'selected' : ''
+                }>${escapeHtml(activity)}</option>`,
+            ).join('')}
+          </select>
+        </label>
+        <label class="flex items-center gap-3 text-xs uppercase tracking-[0.2em] text-slate-500 sm:pt-8">
+          <input
+            class="h-4 w-4 rounded border border-slate-600 bg-slate-950 text-slate-200 focus:ring-0"
+            id="selfie-show"
+            type="checkbox"
+            ${selfieShowToOthers ? 'checked' : ''}
+            ${selfieTodayEntry ? 'disabled' : ''}
+          />
+          Rādīt citiem
+        </label>
+      </div>
+      ${
+        selfieError ? `<p class="mt-4 text-sm text-rose-300">${escapeHtml(selfieError)}</p>` : ''
+      }
+      ${
+        selfieSuccess ? `<p class="mt-4 text-sm text-emerald-300">${escapeHtml(selfieSuccess)}</p>` : ''
+      }
+      <div class="mt-5">
+        <button
+          class="rounded-full bg-slate-100 px-5 py-2 text-sm font-medium text-slate-900 transition hover:bg-white disabled:cursor-not-allowed disabled:opacity-60"
+          id="selfie-submit"
+          type="button"
+          ${selfieSubmitting || selfieLoading || selfieTodayEntry ? 'disabled' : ''}
+        >
+          ${
+            selfieLoading
+              ? 'Ielādējam...'
+              : selfieSubmitting
+                ? 'Saglabājam...'
+                : selfieTodayEntry
+                  ? 'Šodien jau augšupielādēts'
+                  : 'Saglabāt selfie'
+          }
+        </button>
+      </div>
+    </div>
   </div>
 `;
 
@@ -2734,6 +2913,126 @@ function initPasswordAuth() {
   }
 }
 
+function initSelfieForm() {
+  if (!currentUser || !authToken) {
+    return;
+  }
+
+  const submitButton = document.getElementById('selfie-submit');
+  const activityInput = document.getElementById('selfie-activity') as HTMLSelectElement | null;
+  const showInput = document.getElementById('selfie-show') as HTMLInputElement | null;
+  const fileInput = document.getElementById('selfie-image') as HTMLInputElement | null;
+
+  if (activityInput) {
+    activityInput.addEventListener('change', () => {
+      selfieActivity = activityInput.value;
+    });
+  }
+  if (showInput) {
+    showInput.addEventListener('change', () => {
+      selfieShowToOthers = showInput.checked;
+    });
+  }
+
+  const loadTodayEntry = async (force = false) => {
+    if ((selfieLoading || selfieLoaded) && !force) {
+      return;
+    }
+    selfieLoading = true;
+    selfieError = null;
+    render();
+    try {
+      const response = await fetch(`${API_BASE_URL}/selfie/me/today`, {
+        headers: {
+          Authorization: `Bearer ${authToken}`,
+        },
+        cache: 'no-store',
+      });
+      if (!response.ok) {
+        throw new Error('Failed to load selfie');
+      }
+      const data = (await response.json()) as { entry?: SelfieEntry | null };
+      selfieTodayEntry = data.entry ?? null;
+      if (selfieTodayEntry) {
+        selfieShowToOthers = selfieTodayEntry.showToOthers;
+        selfieActivity = selfieTodayEntry.category || SELFIE_ACTIVITIES[0];
+      }
+      selfieLoaded = true;
+    } catch {
+      selfieError = 'Neizdevās ielādēt šodienas selfie.';
+    } finally {
+      selfieLoading = false;
+      render();
+    }
+  };
+
+  window.submitSelfie = async () => {
+    if (!fileInput || !fileInput.files?.[0]) {
+      selfieError = 'Lūdzu izvēlies attēlu.';
+      selfieSuccess = null;
+      render();
+      return;
+    }
+    if (selfieTodayEntry) {
+      selfieError = 'Šodienas selfie jau ir saglabāts.';
+      selfieSuccess = null;
+      render();
+      return;
+    }
+
+    const toBase64 = (file: File) =>
+      new Promise<string>((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve((reader.result as string) ?? '');
+        reader.onerror = () => reject(new Error('Read failed'));
+        reader.readAsDataURL(file);
+      });
+
+    selfieSubmitting = true;
+    selfieError = null;
+    selfieSuccess = null;
+    render();
+    try {
+      const imageBase64 = await toBase64(fileInput.files[0]);
+      const response = await fetch(`${API_BASE_URL}/selfie`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${authToken}`,
+        },
+        body: JSON.stringify({
+          imageBase64,
+          showToOthers: Boolean(showInput?.checked),
+          category: activityInput?.value ?? selfieActivity,
+        }),
+      });
+      if (!response.ok) {
+        throw new Error('Save failed');
+      }
+      const data = (await response.json()) as { entry?: SelfieEntry | null; created?: boolean };
+      selfieTodayEntry = data.entry ?? null;
+      if (data.created) {
+        selfieSuccess = 'Selfie saglabāts!';
+      } else {
+        selfieSuccess = 'Šodienas selfie jau bija saglabāts.';
+      }
+    } catch {
+      selfieError = 'Neizdevās saglabāt selfie.';
+    } finally {
+      selfieSubmitting = false;
+      render();
+    }
+  };
+
+  if (submitButton) {
+    submitButton.addEventListener('click', () => {
+      window.submitSelfie?.();
+    });
+  }
+
+  loadTodayEntry();
+}
+
 function initProfileForm() {
   const user = currentUser;
   if (!user) {
@@ -2756,6 +3055,7 @@ function initProfileForm() {
   });
 
   if (profileTab !== 'profile') {
+    initSelfieForm();
     return;
   }
 
