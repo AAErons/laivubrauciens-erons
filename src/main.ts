@@ -1,4 +1,5 @@
 import './style.css';
+import { mountActivitiesGallery, unmountActivitiesGallery } from './activities-gallery/mount';
 
 declare global {
   interface Window {
@@ -212,10 +213,6 @@ const setCurrentUser = (user: UserProfile | null) => {
     selfieAdminError = null;
     selfieAdminEntries = [];
     selfieAdminActionId = null;
-    activitiesLoading = false;
-    activitiesLoaded = false;
-    activitiesError = null;
-    activitiesEntries = [];
   }
   render();
 };
@@ -245,10 +242,6 @@ let selfieAdminLoading = false;
 let selfieAdminError: string | null = null;
 let selfieAdminEntries: SelfieEntry[] = [];
 let selfieAdminActionId: string | null = null;
-let activitiesLoading = false;
-let activitiesLoaded = false;
-let activitiesError: string | null = null;
-let activitiesEntries: SelfieEntry[] = [];
 let firstTaskLoading = false;
 let firstTaskChecking = false;
 let firstTaskError: string | null = null;
@@ -488,54 +481,7 @@ const activitiesPublicPage = () => `
     <div class="mb-6 text-center sm:mb-8">
       <h1 class="text-2xl font-semibold text-slate-50 sm:text-3xl">Šodienas aktivitātes</h1>
     </div>
-    ${
-      activitiesLoading && !activitiesLoaded
-        ? `<div class="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-            ${Array.from({ length: 6 })
-              .map(
-                () =>
-                  `<div class="overflow-hidden rounded-2xl border border-white/10 bg-slate-900/40">
-                    <div class="aspect-[4/5] animate-pulse bg-slate-800/70"></div>
-                    <div class="space-y-2 p-4">
-                      <div class="h-3 w-2/3 animate-pulse rounded bg-slate-700/70"></div>
-                      <div class="h-3 w-1/3 animate-pulse rounded bg-slate-800/70"></div>
-                    </div>
-                  </div>`,
-              )
-              .join('')}
-          </div>`
-        : activitiesError
-          ? `<div class="rounded-2xl border border-rose-400/20 bg-rose-400/10 p-4 text-sm text-rose-200">
-              ${escapeHtml(activitiesError)}
-            </div>`
-          : activitiesEntries.length === 0
-            ? `<div class="rounded-2xl border border-white/10 bg-slate-950/40 p-6 text-sm text-slate-300">
-                Pašlaik nav publiski redzamu apstiprinātu aktivitāšu.
-              </div>`
-            : `<div class="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-                ${activitiesEntries
-                  .map(
-                    (entry) => `<article class="overflow-hidden rounded-2xl border border-white/10 bg-slate-950/40">
-                    <div class="relative aspect-[4/5] overflow-hidden">
-                      <img
-                        class="h-full w-full object-cover transition duration-300 hover:scale-[1.03]"
-                        src="${escapeHtml(entry.url)}"
-                        alt="Aktivitātes foto"
-                        loading="lazy"
-                      />
-                      <div class="pointer-events-none absolute inset-x-0 bottom-0 bg-gradient-to-t from-slate-950/90 via-slate-950/40 to-transparent px-4 pb-3 pt-10">
-                        <p class="truncate text-sm font-medium text-slate-100">${escapeHtml(entry.category || 'Aktivitāte')}</p>
-                      </div>
-                    </div>
-                    <div class="flex items-center justify-between gap-2 px-4 py-3 text-xs text-slate-400">
-                      <span>${new Date(entry.createdAt).toLocaleDateString('lv-LV')}</span>
-                      <span class="rounded-full border border-emerald-400/30 px-2 py-0.5 text-emerald-300">Apstiprināts</span>
-                    </div>
-                  </article>`,
-                  )
-                  .join('')}
-              </div>`
-    }
+    <div id="activities-gallery-root"></div>
   </section>
 `;
 
@@ -3081,7 +3027,9 @@ const render = () => {
     }
   }
   if (resolvedPath === '/aktivitates') {
-    initActivitiesPublicPage();
+    mountActivitiesGallery('activities-gallery-root', API_BASE_URL);
+  } else {
+    unmountActivitiesGallery();
   }
   if (resolvedPath.startsWith('/rezultati')) {
     initResults();
@@ -3522,36 +3470,6 @@ function initSelfieForm() {
   }
 
   loadTodayEntry();
-}
-
-function initActivitiesPublicPage() {
-  if (activitiesLoading || activitiesLoaded) {
-    return;
-  }
-
-  const loadEntries = async () => {
-    activitiesLoading = true;
-    activitiesError = null;
-    render();
-    try {
-      const response = await fetch(`${API_BASE_URL}/selfie/public`, {
-        cache: 'no-store',
-      });
-      if (!response.ok) {
-        throw new Error('Failed to load public activities');
-      }
-      const data = (await response.json()) as { entries?: SelfieEntry[] };
-      activitiesEntries = data.entries ?? [];
-      activitiesLoaded = true;
-    } catch {
-      activitiesError = 'Neizdevās ielādēt aktivitāšu galeriju.';
-    } finally {
-      activitiesLoading = false;
-      render();
-    }
-  };
-
-  loadEntries();
 }
 
 function initProfileForm() {

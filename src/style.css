@@ -210,6 +210,12 @@
     font-size: 24px;
     transition: transform 0.4s ease;
   }
+
+  .gallery-noise {
+    background-image: radial-gradient(rgba(255, 255, 255, 0.08) 0.6px, transparent 0.6px);
+    background-size: 3px 3px;
+    mix-blend-mode: soft-light;
+  }
 }
 
 @keyframes popIn {
