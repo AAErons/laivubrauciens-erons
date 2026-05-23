@@ -21,7 +21,7 @@ export function useActivitiesData(apiBaseUrl: string) {
       setIsLoading(true);
       setError(null);
       try {
-        const response = await fetch(`${apiBaseUrl}/selfie/public`, { cache: 'no-store' });
+        const response = await fetch(`${apiBaseUrl}/selfie/public/today`, { cache: 'no-store' });
         if (!response.ok) {
           throw new Error('Failed to load');
         }
