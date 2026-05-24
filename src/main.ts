@@ -56,7 +56,12 @@ type TaskResult = {
   picture?: string;
   firstTaskCompletedAt?: string | null;
   highScore?: number;
+  approvedCount?: number;
 };
+
+const THIRD_TASK_RESULTS_START_DATE = '2026-05-25';
+
+const isThirdTaskResultsActive = () => new Date().toISOString().slice(0, 10) >= THIRD_TASK_RESULTS_START_DATE;
 
 type SelfieEntry = {
   id?: string;
@@ -217,6 +222,9 @@ let firstTaskResults: TaskResult[] = [];
 let resultsLoaded = false;
 let highScoreResults: TaskResult[] = [];
 let highScoreLoaded = false;
+let activityResults: TaskResult[] = [];
+let activityResultsLoaded = false;
+let thirdTaskResultsActive = false;
 let navClickBound = false;
 const GAME_SIZE = 5;
 const EMOJI_THEMES: Record<string, string[]> = {
@@ -647,18 +655,18 @@ const selfieChallengePage = () => `
         </label>
         <label class="flex flex-col gap-2 text-xs uppercase tracking-[0.2em] text-slate-500">
           Aktivitāte
-          <input
+          <select
             class="w-full min-w-0 rounded-2xl border border-slate-700/70 bg-slate-950/70 px-4 py-3 text-sm text-slate-200 focus:border-slate-500 focus:outline-none"
             id="selfie-activity"
-            type="text"
-            list="selfie-activities"
-            value="${escapeHtml(selfieActivity)}"
-            placeholder="Sāc rakstīt aktivitāti..."
             ${selfieTodayEntry && (!selfieEditMode || !canEditSelfieEntry(selfieTodayEntry)) ? 'disabled' : ''}
-          />
-          <datalist id="selfie-activities">
-            ${SELFIE_ACTIVITIES.map((activity) => `<option value="${escapeHtml(activity)}"></option>`).join('')}
-          </datalist>
+          >
+            ${SELFIE_ACTIVITIES.map(
+              (activity) =>
+                `<option value="${escapeHtml(activity)}" ${
+                  selfieActivity === activity ? 'selected' : ''
+                }>${escapeHtml(activity)}</option>`,
+            ).join('')}
+          </select>
         </label>
         <label class="flex items-center gap-3 text-xs uppercase tracking-[0.2em] text-slate-500 sm:pt-8">
           <input
@@ -1782,6 +1790,7 @@ const resultsPage = () => {
   const currentLabel = resultsTabLabel(tab);
   const isFirst = tab === 'pirmais';
   const isSecond = tab === 'otrais';
+  const isThird = tab === 'tresais';
   const listContent = resultsLoading
       ? `<p class="text-sm text-slate-400">Ielādējam rezultātus...</p>`
       : resultsError
@@ -1822,7 +1831,29 @@ const resultsPage = () => {
                   .join('')}
               </ol>`
             : `<p class="text-sm text-slate-400">Pagaidām nav rezultātu.</p>`
-          : `<p class="text-sm text-slate-400">Rezultāti tiks papildināti drīzumā.</p>`;
+          : isThird
+            ? !thirdTaskResultsActive
+              ? `<p class="text-sm text-slate-400">Rezultāti būs pieejami no 25. maija.</p>`
+              : activityResults.length
+                ? `<ol class="space-y-2">
+                ${activityResults
+                  .map((user, index) => {
+                    const displayName = escapeHtml(formatParticipantName(user));
+                    const count = user.approvedCount ?? 0;
+                    return `
+                  <li class="flex items-center justify-between gap-3 rounded-2xl border border-white/10 bg-slate-950/50 p-3">
+                    <div class="flex items-center gap-3">
+                      <span class="w-7 text-center text-sm text-slate-400">${index + 1}.</span>
+                      <span class="text-sm text-slate-100">${displayName}</span>
+                    </div>
+                    <span class="text-sm text-slate-300">${count}</span>
+                  </li>
+                `;
+                  })
+                  .join('')}
+              </ol>`
+                : `<p class="text-sm text-slate-400">Pagaidām nav rezultātu.</p>`
+            : `<p class="text-sm text-slate-400">Rezultāti tiks papildināti drīzumā.</p>`;
 
   return `
     <section class="rounded-3xl border border-white/5 bg-white/5 p-8">
@@ -2606,6 +2637,9 @@ const render = () => {
     resultsLoading = false;
     resultsError = null;
     highScoreLoaded = false;
+    activityResultsLoaded = false;
+    activityResults = [];
+    thirdTaskResultsActive = false;
   }
   if (resolvedPath !== '/spele') {
     insanityActiveClient = false;
@@ -2885,7 +2919,7 @@ function initSelfieForm() {
   const openFormButton = document.getElementById('selfie-open-form');
   const submitButton = document.getElementById('selfie-submit');
   const cancelEditButton = document.getElementById('selfie-cancel-edit');
-  const activityInput = document.getElementById('selfie-activity') as HTMLInputElement | null;
+  const activityInput = document.getElementById('selfie-activity') as HTMLSelectElement | null;
   const showInput = document.getElementById('selfie-show') as HTMLInputElement | null;
   const fileInput = document.getElementById('selfie-image') as HTMLInputElement | null;
 
@@ -2909,7 +2943,7 @@ function initSelfieForm() {
   }
 
   if (activityInput) {
-    activityInput.addEventListener('input', () => {
+    activityInput.addEventListener('change', () => {
       selfieActivity = activityInput.value;
     });
   }
@@ -3110,12 +3144,21 @@ function initSelfieForm() {
         selfieSuccess = 'Aktivitāte atjaunināta!';
       } else if (data.created) {
         selfieSuccess = 'Aktivitāte saglabāta!';
-        selfieAddedDays += 1;
       } else {
         selfieSuccess = 'Šodienas aktivitāte jau bija saglabāta.';
       }
       selfieEditMode = false;
       selfieFormOpen = false;
+      if (authToken) {
+        const statsResponse = await fetch(`${API_BASE_URL}/selfie/me/stats`, {
+          headers: { Authorization: `Bearer ${authToken}` },
+          cache: 'no-store',
+        });
+        if (statsResponse.ok) {
+          const statsData = (await statsResponse.json()) as { addedDays?: number };
+          selfieAddedDays = Math.max(0, Number(statsData.addedDays ?? 0));
+        }
+      }
     } catch {
       selfieError = 'Neizdevās saglabāt aktivitāti.';
     } finally {
@@ -3492,6 +3535,43 @@ function initResults() {
         resultsLoading = false;
         resultsError = 'Neizdevās ielādēt rezultātus.';
         highScoreLoaded = true;
+        render();
+      });
+    return;
+  }
+  if (tab === 'tresais') {
+    thirdTaskResultsActive = isThirdTaskResultsActive();
+    if (!thirdTaskResultsActive) {
+      activityResults = [];
+      activityResultsLoaded = true;
+      render();
+      return;
+    }
+    if (resultsLoading || activityResultsLoaded) {
+      return;
+    }
+    resultsLoading = true;
+    resultsError = null;
+    activityResults = [];
+    render();
+    fetch(`${API_BASE_URL}/selfie/activity-results`, { cache: 'no-store' })
+      .then(async (response) => {
+        if (!response.ok) {
+          throw new Error('Failed to load results');
+        }
+        return (await response.json()) as { users: TaskResult[]; active?: boolean };
+      })
+      .then((data) => {
+        thirdTaskResultsActive = Boolean(data.active);
+        activityResults = data.users ?? [];
+        resultsLoading = false;
+        activityResultsLoaded = true;
+        render();
+      })
+      .catch(() => {
+        resultsLoading = false;
+        resultsError = 'Neizdevās ielādēt rezultātus.';
+        activityResultsLoaded = true;
         render();
       });
   }
