@@ -184,6 +184,7 @@ const setCurrentUser = (user: UserProfile | null) => {
     selfieAdminError = null;
     selfieAdminEntries = [];
     selfieAdminActionId = null;
+    selfieAdminLightboxIndex = null;
   }
   render();
 };
@@ -213,6 +214,7 @@ let selfieAdminLoading = false;
 let selfieAdminError: string | null = null;
 let selfieAdminEntries: SelfieEntry[] = [];
 let selfieAdminActionId: string | null = null;
+let selfieAdminLightboxIndex: number | null = null;
 let firstTaskLoading = false;
 let firstTaskChecking = false;
 let firstTaskError: string | null = null;
@@ -435,6 +437,70 @@ const activitiesPublicPage = () => `
   </section>
 `;
 
+const selfieAdminLightbox = () => {
+  if (selfieAdminLightboxIndex === null) {
+    return '';
+  }
+  const entry = selfieAdminEntries[selfieAdminLightboxIndex];
+  if (!entry) {
+    return '';
+  }
+  const userLabel =
+    `${entry.firstName ?? ''} ${entry.lastName ?? ''}`.trim() || entry.name || entry.userId || '—';
+  const moderation = getModerationMeta(entry.moderationStatus);
+  const hasPrev = selfieAdminLightboxIndex > 0;
+  const hasNext = selfieAdminLightboxIndex < selfieAdminEntries.length - 1;
+
+  return `
+    <div class="participant-modal" role="dialog" aria-modal="true">
+      <div class="participant-modal__backdrop" data-selfie-admin-lightbox-close></div>
+      <div class="gallery-modal__card">
+        <button
+          class="participant-modal__close"
+          type="button"
+          data-selfie-admin-lightbox-close
+          aria-label="Aizvērt"
+        >
+          ×
+        </button>
+        <div class="overflow-hidden rounded-3xl border border-white/10 bg-slate-950/40">
+          <img
+            src="${escapeHtml(entry.url)}"
+            class="max-h-[72vh] w-full object-contain"
+            alt="${escapeHtml(entry.category || 'Aktivitāte')}"
+          />
+        </div>
+        <div class="mt-4 flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <p class="text-lg font-semibold text-slate-100">${escapeHtml(entry.category || 'Aktivitāte')}</p>
+            <p class="mt-1 text-sm text-slate-400">Lietotājs: ${escapeHtml(userLabel)}</p>
+            <span class="mt-2 inline-flex rounded-full border border-white/10 px-2 py-0.5 text-[11px] ${moderation.className}">${moderation.label}</span>
+          </div>
+          <div class="flex items-center gap-2 text-sm">
+            <button
+              class="rounded-full border border-white/10 px-4 py-2 text-slate-200 transition hover:border-white/30 disabled:opacity-40 disabled:hover:border-white/10"
+              type="button"
+              data-selfie-admin-lightbox-prev
+              ${hasPrev ? '' : 'disabled'}
+            >
+              Iepriekšējā
+            </button>
+            <span class="text-slate-400">${selfieAdminLightboxIndex + 1} / ${selfieAdminEntries.length}</span>
+            <button
+              class="rounded-full border border-white/10 px-4 py-2 text-slate-200 transition hover:border-white/30 disabled:opacity-40 disabled:hover:border-white/10"
+              type="button"
+              data-selfie-admin-lightbox-next
+              ${hasNext ? '' : 'disabled'}
+            >
+              Nākamā
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  `;
+};
+
 const selfieAdminPage = () => `
   <div class="mt-6 grid gap-4 sm:mt-8 sm:gap-5">
     <div class="rounded-2xl border border-white/10 bg-slate-950/40 p-4 sm:p-5">
@@ -456,13 +522,20 @@ const selfieAdminPage = () => `
             ? `<div class="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
                 ${selfieAdminEntries
                   .map(
-                    (entry) => `
+                    (entry, index) => `
                   <div class="rounded-2xl border border-white/10 bg-slate-900/50 p-3">
-                    <img
-                      class="h-44 w-full rounded-xl border border-white/10 object-cover"
-                      src="${escapeHtml(entry.url)}"
-                      alt="${escapeHtml(entry.category || 'Aktivitāte')}"
-                    />
+                    <button
+                      class="group block w-full text-left"
+                      type="button"
+                      data-selfie-admin-preview="${index}"
+                      aria-label="Skatīt pilnu izmēru"
+                    >
+                      <img
+                        class="h-44 w-full cursor-zoom-in rounded-xl border border-white/10 object-cover transition group-hover:opacity-90"
+                        src="${escapeHtml(entry.url)}"
+                        alt="${escapeHtml(entry.category || 'Aktivitāte')}"
+                      />
+                    </button>
                     <p class="mt-2 text-sm text-slate-200">${escapeHtml(entry.category || 'Aktivitāte')}</p>
                     <div class="mt-1 flex flex-wrap gap-2 text-[11px]">
                       <span class="rounded-full border border-white/10 px-2 py-0.5 text-slate-300">Lietotājs: ${escapeHtml(
@@ -510,6 +583,7 @@ const selfieAdminPage = () => `
       }
     </div>
   </div>
+  ${selfieAdminLightbox()}
 `;
 
 const selfieChallengePage = () => `
@@ -2840,10 +2914,32 @@ function initPasswordAuth() {
   }
 }
 
+const handleSelfieAdminLightboxKeydown = (event: KeyboardEvent) => {
+  if (selfieAdminLightboxIndex === null) {
+    return;
+  }
+  if (event.key === 'Escape') {
+    selfieAdminLightboxIndex = null;
+    render();
+    return;
+  }
+  if (event.key === 'ArrowLeft' && selfieAdminLightboxIndex > 0) {
+    selfieAdminLightboxIndex -= 1;
+    render();
+    return;
+  }
+  if (event.key === 'ArrowRight' && selfieAdminLightboxIndex < selfieAdminEntries.length - 1) {
+    selfieAdminLightboxIndex += 1;
+    render();
+  }
+};
+
 function initSelfieAdmin() {
   if (!authToken || !currentUser?.admin) {
     return;
   }
+
+  document.removeEventListener('keydown', handleSelfieAdminLightboxKeydown);
 
   const loadAdminEntries = async () => {
     selfieAdminLoading = true;
@@ -2861,6 +2957,12 @@ function initSelfieAdmin() {
       }
       const data = (await response.json()) as { entries?: SelfieEntry[] };
       selfieAdminEntries = data.entries ?? [];
+      if (
+        selfieAdminLightboxIndex !== null &&
+        selfieAdminLightboxIndex >= selfieAdminEntries.length
+      ) {
+        selfieAdminLightboxIndex = null;
+      }
     } catch {
       selfieAdminError = 'Neizdevās ielādēt šodienas aktivitātes.';
     } finally {
@@ -2901,6 +3003,53 @@ function initSelfieAdmin() {
       }
     });
   });
+
+  document.querySelectorAll('[data-selfie-admin-preview]').forEach((button) => {
+    button.addEventListener('click', () => {
+      const index = Number((button as HTMLElement).dataset.selfieAdminPreview);
+      if (!Number.isFinite(index) || index < 0 || index >= selfieAdminEntries.length) {
+        return;
+      }
+      selfieAdminLightboxIndex = index;
+      render();
+    });
+  });
+
+  document.querySelectorAll('[data-selfie-admin-lightbox-close]').forEach((element) => {
+    element.addEventListener('click', () => {
+      selfieAdminLightboxIndex = null;
+      render();
+    });
+  });
+
+  const lightboxPrev = document.querySelector('[data-selfie-admin-lightbox-prev]');
+  if (lightboxPrev) {
+    lightboxPrev.addEventListener('click', () => {
+      if (selfieAdminLightboxIndex === null || selfieAdminLightboxIndex <= 0) {
+        return;
+      }
+      selfieAdminLightboxIndex -= 1;
+      render();
+    });
+  }
+
+  const lightboxNext = document.querySelector('[data-selfie-admin-lightbox-next]');
+  if (lightboxNext) {
+    lightboxNext.addEventListener('click', () => {
+      if (
+        selfieAdminLightboxIndex === null ||
+        selfieAdminLightboxIndex >= selfieAdminEntries.length - 1
+      ) {
+        return;
+      }
+      selfieAdminLightboxIndex += 1;
+      render();
+    });
+  }
+
+  if (selfieAdminLightboxIndex !== null) {
+    document.addEventListener('keydown', handleSelfieAdminLightboxKeydown);
+  }
 
   if (!selfieAdminLoading && selfieAdminEntries.length === 0 && !selfieAdminError) {
     loadAdminEntries();
