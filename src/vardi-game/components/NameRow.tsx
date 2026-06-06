@@ -13,6 +13,67 @@ type NameRowProps = {
   onChange: (cellIndex: number, value: string) => void;
 };
 
+type CellStatus = 'green' | 'yellow' | 'absent';
+
+/**
+ * Wordle-style scoring, computed only once every letter of the name is filled.
+ * Returns null while the word is incomplete so partial typing stays neutral.
+ */
+const computeFeedback = (
+  cells: NameCell[],
+  selectedLetters: string[],
+  inputs: Record<string, string>,
+): Map<number, CellStatus> | null => {
+  const letterCells = cells.filter((cell) => cell.isLetter);
+  const targets = letterCells.map((cell) => normalizeLetter(cell.char));
+  const guesses = letterCells.map((cell) => {
+    const target = normalizeLetter(cell.char);
+    if (selectedLetters.includes(target)) {
+      return target;
+    }
+    return normalizeLetter(inputs[cell.index] ?? '');
+  });
+
+  if (guesses.some((guess) => !guess)) {
+    return null;
+  }
+
+  const counts = new Map<string, number>();
+  targets.forEach((target) => counts.set(target, (counts.get(target) ?? 0) + 1));
+
+  const statuses: CellStatus[] = letterCells.map(() => 'absent');
+  letterCells.forEach((_, index) => {
+    if (guesses[index] === targets[index]) {
+      statuses[index] = 'green';
+      counts.set(guesses[index], (counts.get(guesses[index]) ?? 0) - 1);
+    }
+  });
+  letterCells.forEach((_, index) => {
+    if (statuses[index] === 'green') {
+      return;
+    }
+    const remaining = counts.get(guesses[index]) ?? 0;
+    if (remaining > 0) {
+      statuses[index] = 'yellow';
+      counts.set(guesses[index], remaining - 1);
+    }
+  });
+
+  const map = new Map<number, CellStatus>();
+  letterCells.forEach((cell, index) => map.set(cell.index, statuses[index]));
+  return map;
+};
+
+const statusBoxClass = (status: CellStatus): string => {
+  if (status === 'green') {
+    return 'border-emerald-400/70 bg-emerald-400/20 text-emerald-50 focus:ring-emerald-300/30';
+  }
+  if (status === 'yellow') {
+    return 'border-amber-400/70 bg-amber-400/20 text-amber-50 focus:ring-amber-300/30';
+  }
+  return 'border-white/10 bg-slate-800/70 text-slate-300 focus:ring-slate-300/20';
+};
+
 export function NameRow({
   name,
   cells,
@@ -25,6 +86,9 @@ export function NameRow({
   // auto-advance focus as the player types.
   const inputRefs = useRef<(HTMLInputElement | null)[]>([]);
   let inputOrder = -1;
+
+  // Feedback appears only when the whole word is filled but not yet correct.
+  const feedback = isCompleted ? null : computeFeedback(cells, selectedLetters, inputs);
 
   const focusSibling = (order: number, direction: 1 | -1) => {
     const target = inputRefs.current[order + direction];
@@ -72,14 +136,15 @@ export function NameRow({
 
           if (isRevealed || isCompleted) {
             const display = isRevealed ? target : normalizeLetter(inputs[cell.index] ?? cell.char);
+            // Revealed letters are correct, so they turn green while feedback shows.
+            const revealedClass =
+              isCompleted || feedback
+                ? 'border-emerald-400/60 bg-emerald-400/20 text-emerald-50'
+                : 'border-sky-400/40 bg-sky-400/10 text-sky-100';
             return (
               <span
                 key={cell.index}
-                className={`flex h-9 w-8 items-center justify-center rounded-md border text-base font-semibold uppercase sm:h-10 sm:w-9 ${
-                  isCompleted
-                    ? 'border-emerald-400/60 bg-emerald-400/20 text-emerald-50'
-                    : 'border-sky-400/40 bg-sky-400/10 text-sky-100'
-                }`}
+                className={`flex h-9 w-8 items-center justify-center rounded-md border text-base font-semibold uppercase sm:h-10 sm:w-9 ${revealedClass}`}
               >
                 {display}
               </span>
@@ -88,6 +153,10 @@ export function NameRow({
 
           inputOrder += 1;
           const order = inputOrder;
+          const status = feedback?.get(cell.index) ?? null;
+          const inputClass = status
+            ? statusBoxClass(status)
+            : 'border-white/15 bg-slate-900/70 text-slate-50 caret-sky-300 focus:border-sky-400/70 focus:bg-slate-900 focus:ring-sky-400/30';
           return (
             <input
               key={cell.index}
@@ -116,7 +185,7 @@ export function NameRow({
                   focusSibling(order, -1);
                 }
               }}
-              className="h-9 w-8 rounded-md border border-white/15 bg-slate-900/70 text-center text-base font-semibold uppercase text-slate-50 caret-sky-300 outline-none transition focus:border-sky-400/70 focus:bg-slate-900 focus:ring-2 focus:ring-sky-400/30 sm:h-10 sm:w-9"
+              className={`h-9 w-8 rounded-md border text-center text-base font-semibold uppercase outline-none transition focus:ring-2 sm:h-10 sm:w-9 ${inputClass}`}
             />
           );
         })}
