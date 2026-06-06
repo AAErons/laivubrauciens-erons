@@ -1,5 +1,6 @@
 import './style.css';
 import { mountActivitiesGallery, unmountActivitiesGallery } from './activities-gallery/mount';
+import { mountVardiGame, unmountVardiGame } from './vardi-game/mount';
 
 declare global {
   interface Window {
@@ -57,6 +58,7 @@ type TaskResult = {
   firstTaskCompletedAt?: string | null;
   highScore?: number;
   approvedCount?: number;
+  vardiCompletedAt?: string | null;
 };
 
 const THIRD_TASK_RESULTS_START_DATE = '2026-05-25';
@@ -227,6 +229,8 @@ let highScoreLoaded = false;
 let activityResults: TaskResult[] = [];
 let activityResultsLoaded = false;
 let thirdTaskResultsActive = false;
+let vardiResults: TaskResult[] = [];
+let vardiResultsLoaded = false;
 let navClickBound = false;
 const GAME_SIZE = 5;
 const EMOJI_THEMES: Record<string, string[]> = {
@@ -1486,6 +1490,33 @@ const labiPage = () => `
   </section>
 `;
 
+const vardiPage = () => {
+  if (!currentUser || !authToken) {
+    return `
+  <section class="mx-auto w-full max-w-3xl rounded-3xl border border-white/5 bg-white/5 p-8 sm:p-10">
+    <p class="text-xs uppercase tracking-[0.35em] text-slate-400">Jauna spēle</p>
+    <h1 class="mt-3 text-3xl font-semibold text-white sm:text-4xl">Vārdi</h1>
+    <div class="mt-8 rounded-2xl border border-white/10 bg-slate-950/40 p-10 text-center">
+      <p class="text-sm uppercase tracking-[0.25em] text-slate-300">
+        Ienāciet profilā, lai spēlētu
+      </p>
+      <a
+        class="mt-5 inline-block rounded-full border border-slate-700/70 px-5 py-2 text-sm text-slate-100 transition hover:border-slate-500"
+        href="#/autentifikacija"
+      >
+        Ienākt profilā
+      </a>
+    </div>
+  </section>
+`;
+  }
+  return `
+  <section class="mx-auto w-full max-w-4xl">
+    <div id="vardi-game-root"></div>
+  </section>
+`;
+};
+
 const getRoute = () => {
   const normalizeRoutePath = (value: string) => {
     const trimmed = value.trim();
@@ -1544,6 +1575,22 @@ const formatParticipantName = (user: TaskResult) => {
   const firstName = user.firstName?.trim() ?? '';
   const lastName = user.lastName?.trim() ?? '';
   return `${firstName} ${lastName}`.trim() || user.name || 'Dalībnieks';
+};
+
+const formatVardiFinishTime = (value?: string | null) => {
+  if (!value) {
+    return '';
+  }
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) {
+    return '';
+  }
+  return date.toLocaleString('lv-LV', {
+    day: 'numeric',
+    month: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+  });
 };
 
 const spelePage = () => {
@@ -1865,6 +1912,7 @@ const resultsPage = () => {
   const isFirst = tab === 'pirmais';
   const isSecond = tab === 'otrais';
   const isThird = tab === 'tresais';
+  const isFourth = tab === 'ceturtais';
   const listContent = resultsLoading
       ? `<p class="text-sm text-slate-400">Ielādējam rezultātus...</p>`
       : resultsError
@@ -1927,7 +1975,27 @@ const resultsPage = () => {
                   .join('')}
               </ol>`
                 : `<p class="text-sm text-slate-400">Pagaidām nav rezultātu.</p>`
-            : `<p class="text-sm text-slate-400">Rezultāti tiks papildināti drīzumā.</p>`;
+            : isFourth
+              ? vardiResults.length
+                ? `<ol class="space-y-2">
+                ${vardiResults
+                  .map((user, index) => {
+                    const displayName = escapeHtml(formatParticipantName(user));
+                    const finishedAt = formatVardiFinishTime(user.vardiCompletedAt);
+                    return `
+                  <li class="flex items-center justify-between gap-3 rounded-2xl border border-white/10 bg-slate-950/50 p-3">
+                    <div class="flex items-center gap-3">
+                      <span class="w-7 text-center text-sm text-slate-400">${index + 1}.</span>
+                      <span class="text-sm text-slate-100">${displayName}</span>
+                    </div>
+                    <span class="text-xs text-slate-400">${finishedAt}</span>
+                  </li>
+                `;
+                  })
+                  .join('')}
+              </ol>`
+                : `<p class="text-sm text-slate-400">Pagaidām neviens nav pabeidzis.</p>`
+              : `<p class="text-sm text-slate-400">Rezultāti tiks papildināti drīzumā.</p>`;
 
   return `
     <section class="rounded-3xl border border-white/5 bg-white/5 p-8">
@@ -2612,6 +2680,8 @@ const render = () => {
                 ? labiPage()
                 : resolvedPath === '/spele'
                   ? spelePage()
+                  : resolvedPath === '/vardi'
+                    ? vardiPage()
                     : resolvedPath === '/babyrhythm/privacy'
                       ? BABYRHYTHM_PRIVACY_PAGE()
                       : resolvedPath === '/babyrhythm/delete-account'
@@ -2714,6 +2784,8 @@ const render = () => {
     activityResultsLoaded = false;
     activityResults = [];
     thirdTaskResultsActive = false;
+    vardiResultsLoaded = false;
+    vardiResults = [];
   }
   if (resolvedPath !== '/spele') {
     insanityActiveClient = false;
@@ -2761,6 +2833,11 @@ const render = () => {
     mountActivitiesGallery('activities-gallery-root', API_BASE_URL);
   } else {
     unmountActivitiesGallery();
+  }
+  if (resolvedPath === '/vardi' && currentUser && authToken) {
+    mountVardiGame('vardi-game-root', API_BASE_URL, authToken);
+  } else {
+    unmountVardiGame();
   }
   if (resolvedPath.startsWith('/rezultati')) {
     initResults();
@@ -3721,6 +3798,35 @@ function initResults() {
         resultsLoading = false;
         resultsError = 'Neizdevās ielādēt rezultātus.';
         activityResultsLoaded = true;
+        render();
+      });
+    return;
+  }
+  if (tab === 'ceturtais') {
+    if (resultsLoading || vardiResultsLoaded) {
+      return;
+    }
+    resultsLoading = true;
+    resultsError = null;
+    vardiResults = [];
+    render();
+    fetch(`${API_BASE_URL}/game-progress/results`, { cache: 'no-store' })
+      .then(async (response) => {
+        if (!response.ok) {
+          throw new Error('Failed to load results');
+        }
+        return (await response.json()) as { users: TaskResult[] };
+      })
+      .then((data) => {
+        vardiResults = data.users ?? [];
+        resultsLoading = false;
+        vardiResultsLoaded = true;
+        render();
+      })
+      .catch(() => {
+        resultsLoading = false;
+        resultsError = 'Neizdevās ielādēt rezultātus.';
+        vardiResultsLoaded = true;
         render();
       });
   }
