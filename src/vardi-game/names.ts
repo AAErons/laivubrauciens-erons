@@ -48,6 +48,7 @@ export const NAMES: readonly string[] = [
   'Elīna',
   'Juris',
   'Krista',
+  'Oskars',
 ] as const;
 
 /** Unicode-aware letter test that includes Latvian diacritics. */
