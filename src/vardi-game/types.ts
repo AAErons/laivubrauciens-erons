@@ -3,6 +3,8 @@ export type GameProgress = {
   lettersLocked: boolean;
   completedNames: string[];
   currentInputs: Record<string, Record<string, string>>;
+  /** Per-user fixed random display order, as a permutation of name indices. */
+  nameOrder: number[];
   /** ISO timestamp set once every name has been guessed; null until then. */
   completedAt: string | null;
 };

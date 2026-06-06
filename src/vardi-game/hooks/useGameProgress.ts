@@ -7,6 +7,7 @@ const EMPTY_PROGRESS: GameProgress = {
   lettersLocked: false,
   completedNames: [],
   currentInputs: {},
+  nameOrder: [],
   completedAt: null,
 };
 
@@ -28,6 +29,7 @@ const normalizeProgress = (raw: Partial<GameProgress> | null | undefined): GameP
   completedNames: Array.isArray(raw?.completedNames) ? raw!.completedNames : [],
   currentInputs:
     raw?.currentInputs && typeof raw.currentInputs === 'object' ? raw.currentInputs : {},
+  nameOrder: Array.isArray(raw?.nameOrder) ? raw!.nameOrder : [],
   completedAt: typeof raw?.completedAt === 'string' ? raw.completedAt : null,
 });
 

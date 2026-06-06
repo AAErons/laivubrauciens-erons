@@ -41,10 +41,29 @@ export function VardiGameApp({ apiBaseUrl, authToken }: VardiGameAppProps) {
 
   // Each row is tracked by its position in NAMES (a stable slot key), so two
   // participants who share the same name (e.g. two "Mārtiņš") never collide.
-  const nameCells = useMemo(
-    () => NAMES.map((name, index) => ({ name, slot: String(index), cells: splitNameIntoCells(name) })),
-    [],
-  );
+  // Rows are displayed in the user's persisted random order, while the slot key
+  // stays the underlying name index so progress remains consistent.
+  const nameCells = useMemo(() => {
+    const seen = new Set<number>();
+    const ordered: number[] = [];
+    for (const index of progress.nameOrder) {
+      if (Number.isInteger(index) && index >= 0 && index < NAMES.length && !seen.has(index)) {
+        seen.add(index);
+        ordered.push(index);
+      }
+    }
+    // Append any names missing from the stored order (e.g. list changed later).
+    for (let index = 0; index < NAMES.length; index += 1) {
+      if (!seen.has(index)) {
+        ordered.push(index);
+      }
+    }
+    return ordered.map((index) => ({
+      name: NAMES[index],
+      slot: String(index),
+      cells: splitNameIntoCells(NAMES[index]),
+    }));
+  }, [progress.nameOrder]);
 
   const completedSet = useMemo(
     () => new Set(progress.completedNames),
