@@ -39,8 +39,10 @@ export function VardiGameApp({ apiBaseUrl, authToken }: VardiGameAppProps) {
   );
   const [draftLetters, setDraftLetters] = useState<string[]>([]);
 
+  // Each row is tracked by its position in NAMES (a stable slot key), so two
+  // participants who share the same name (e.g. two "Mārtiņš") never collide.
   const nameCells = useMemo(
-    () => NAMES.map((name) => ({ name, cells: splitNameIntoCells(name) })),
+    () => NAMES.map((name, index) => ({ name, slot: String(index), cells: splitNameIntoCells(name) })),
     [],
   );
 
@@ -67,8 +69,8 @@ export function VardiGameApp({ apiBaseUrl, authToken }: VardiGameAppProps) {
     }
     updateProgress((previous) => {
       const selectedLetters = draftLetters.map((letter) => normalizeLetter(letter));
-      const autoCompleted = NAMES.filter((name) =>
-        isNameComplete(name, selectedLetters, previous.currentInputs[name] ?? {}),
+      const autoCompleted = NAMES.map((_, index) => String(index)).filter((slot) =>
+        isNameComplete(NAMES[Number(slot)], selectedLetters, previous.currentInputs[slot] ?? {}),
       );
       const completedNames = Array.from(
         new Set([...previous.completedNames, ...autoCompleted]),
@@ -82,24 +84,24 @@ export function VardiGameApp({ apiBaseUrl, authToken }: VardiGameAppProps) {
     });
   };
 
-  const handleCellChange = (name: string, cellIndex: number, value: string) => {
-    if (completedSet.has(name)) {
+  const handleCellChange = (slot: string, cellIndex: number, value: string) => {
+    if (completedSet.has(slot)) {
       return;
     }
     updateProgress((previous) => {
-      const nameInputs = { ...(previous.currentInputs[name] ?? {}) };
+      const slotInputs = { ...(previous.currentInputs[slot] ?? {}) };
       if (value) {
-        nameInputs[cellIndex] = value;
+        slotInputs[cellIndex] = value;
       } else {
-        delete nameInputs[cellIndex];
+        delete slotInputs[cellIndex];
       }
-      const currentInputs = { ...previous.currentInputs, [name]: nameInputs };
+      const currentInputs = { ...previous.currentInputs, [slot]: slotInputs };
       let completedNames = previous.completedNames;
       if (
-        !completedNames.includes(name) &&
-        isNameComplete(name, previous.selectedLetters, nameInputs)
+        !completedNames.includes(slot) &&
+        isNameComplete(NAMES[Number(slot)], previous.selectedLetters, slotInputs)
       ) {
-        completedNames = [...completedNames, name];
+        completedNames = [...completedNames, slot];
       }
       return { ...previous, currentInputs, completedNames } satisfies GameProgress;
     });
@@ -196,15 +198,15 @@ export function VardiGameApp({ apiBaseUrl, authToken }: VardiGameAppProps) {
         />
       ) : (
         <div className="grid grid-cols-1 gap-3 lg:grid-cols-2">
-          {nameCells.map(({ name, cells }) => (
+          {nameCells.map(({ name, slot, cells }) => (
             <NameRow
-              key={name}
+              key={slot}
               name={name}
               cells={cells}
               selectedLetters={progress.selectedLetters}
-              inputs={progress.currentInputs[name] ?? {}}
-              isCompleted={completedSet.has(name)}
-              onChange={(cellIndex, value) => handleCellChange(name, cellIndex, value)}
+              inputs={progress.currentInputs[slot] ?? {}}
+              isCompleted={completedSet.has(slot)}
+              onChange={(cellIndex, value) => handleCellChange(slot, cellIndex, value)}
             />
           ))}
         </div>
