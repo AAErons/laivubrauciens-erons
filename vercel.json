@@ -10,6 +10,8 @@
     { "source": "/photos/:path*", "destination": "/api/photos/:path*" },
     { "source": "/game-progress", "destination": "/api/game-progress" },
     { "source": "/game-progress/:path*", "destination": "/api/game-progress/:path*" },
+    { "source": "/settings", "destination": "/api/settings" },
+    { "source": "/settings/:path*", "destination": "/api/settings/:path*" },
     { "source": "/(.*)", "destination": "/index.html" }
   ]
 }

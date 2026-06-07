@@ -231,6 +231,9 @@ let activityResultsLoaded = false;
 let thirdTaskResultsActive = false;
 let vardiResults: TaskResult[] = [];
 let vardiResultsLoaded = false;
+let vardiGameEnabled = false;
+let vardiSettingToggling = false;
+let vardiSettingError: string | null = null;
 let navClickBound = false;
 const GAME_SIZE = 5;
 const EMOJI_THEMES: Record<string, string[]> = {
@@ -802,6 +805,48 @@ const selfieChallengePage = () => `
   }
 `;
 
+const adminSettingsCard = () => {
+  if (!currentUser?.admin) {
+    return '';
+  }
+  return `
+    <div class="mt-6 rounded-2xl border border-amber-400/20 bg-amber-400/5 p-4 sm:p-5">
+      <p class="text-xs uppercase tracking-[0.2em] text-amber-200/80">Administratora iestatījumi</p>
+      <div class="mt-3 flex items-center justify-between gap-4">
+        <div>
+          <p class="text-sm text-slate-100">Vārdu spēle</p>
+          <p class="mt-1 text-xs text-slate-400">
+            Kad ieslēgts, visiem lietotājiem parādās izvēlne “Vārdi”.
+          </p>
+        </div>
+        <button
+          id="admin-vardi-toggle"
+          type="button"
+          role="switch"
+          aria-checked="${vardiGameEnabled ? 'true' : 'false'}"
+          ${vardiSettingToggling ? 'disabled' : ''}
+          class="relative inline-flex h-7 w-12 shrink-0 items-center rounded-full border transition ${
+            vardiGameEnabled
+              ? 'border-emerald-400/60 bg-emerald-400/30'
+              : 'border-slate-600 bg-slate-800'
+          } ${vardiSettingToggling ? 'opacity-60' : ''}"
+        >
+          <span
+            class="inline-block h-5 w-5 transform rounded-full bg-white shadow transition ${
+              vardiGameEnabled ? 'translate-x-6' : 'translate-x-1'
+            }"
+          ></span>
+        </button>
+      </div>
+      ${
+        vardiSettingError
+          ? `<p class="mt-3 text-sm text-rose-300">${escapeHtml(vardiSettingError)}</p>`
+          : ''
+      }
+    </div>
+  `;
+};
+
 const profilePage = () => {
   const defaults = getProfileDefaults();
   const safeFirstName = escapeHtml(defaults.firstName);
@@ -846,6 +891,7 @@ const profilePage = () => {
   if (profileMode === 'view') {
     return `
       ${header}
+      ${adminSettingsCard()}
       <div class="mt-3 flex justify-center">
         <span class="inline-flex items-center gap-2 rounded-full border border-white/10 px-3 py-1 text-[11px] uppercase tracking-[0.25em] text-slate-500">
           <span>${defaults.showProfile ? 'Redzams' : 'Slēpts'}</span>
@@ -898,6 +944,7 @@ const profilePage = () => {
 
   return `
     ${header}
+    ${adminSettingsCard()}
     <div class="mt-8 grid gap-5">
       <div class="grid gap-4 sm:grid-cols-2">
         <label class="flex flex-col gap-2 text-xs uppercase tracking-[0.2em] text-slate-500">
@@ -1506,6 +1553,19 @@ const vardiPage = () => {
       >
         Ienākt profilā
       </a>
+    </div>
+  </section>
+`;
+  }
+  if (!vardiGameEnabled && !currentUser.admin) {
+    return `
+  <section class="mx-auto w-full max-w-3xl rounded-3xl border border-white/5 bg-white/5 p-8 sm:p-10">
+    <p class="text-xs uppercase tracking-[0.35em] text-slate-400">Jauna spēle</p>
+    <h1 class="mt-3 text-3xl font-semibold text-white sm:text-4xl">Vārdi</h1>
+    <div class="mt-8 rounded-2xl border border-white/10 bg-slate-950/40 p-10 text-center">
+      <p class="text-sm uppercase tracking-[0.25em] text-slate-300">
+        Spēle vēl nav pieejama
+      </p>
     </div>
   </section>
 `;
@@ -2720,6 +2780,11 @@ const render = () => {
             <a class="transition hover:text-slate-50" href="#/rezultati/pirmais">Rezultāti</a>
             <a class="transition hover:text-slate-50" href="#/aktivitates">Aktivitātes</a>
             <a class="transition hover:text-slate-50" href="#/spele">Spēle</a>
+            ${
+              currentUser && vardiGameEnabled
+                ? `<a class="transition hover:text-slate-50" href="#/vardi">Vārdi</a>`
+                : ''
+            }
             <a class="transition hover:text-slate-50" href="#/apraksts">Apraksts</a>
             <a
               class="rounded-full border border-slate-700/70 px-3 py-1.5 text-slate-100 transition hover:border-slate-500"
@@ -2834,7 +2899,12 @@ const render = () => {
   } else {
     unmountActivitiesGallery();
   }
-  if (resolvedPath === '/vardi' && currentUser && authToken) {
+  if (
+    resolvedPath === '/vardi' &&
+    currentUser &&
+    authToken &&
+    (vardiGameEnabled || currentUser.admin)
+  ) {
     mountVardiGame('vardi-game-root', API_BASE_URL, authToken);
   } else {
     unmountVardiGame();
@@ -2909,8 +2979,21 @@ const render = () => {
   }
 };
 
+const loadAppSettings = () => {
+  fetch(`${API_BASE_URL}/settings`, { cache: 'no-store' })
+    .then(async (response) => (response.ok ? ((await response.json()) as { vardiGameEnabled?: boolean }) : null))
+    .then((data) => {
+      if (data) {
+        vardiGameEnabled = Boolean(data.vardiGameEnabled);
+        render();
+      }
+    })
+    .catch(() => {});
+};
+
 window.addEventListener('hashchange', handleHashChange);
 render();
+loadAppSettings();
 
 function initPasswordAuth() {
   const submitButton = document.getElementById('auth-submit');
@@ -3447,6 +3530,39 @@ function initProfileForm() {
       profileMode = 'edit';
       profileError = null;
       render();
+    });
+  }
+
+  const adminVardiToggle = document.getElementById('admin-vardi-toggle');
+  if (adminVardiToggle && currentUser?.admin) {
+    adminVardiToggle.addEventListener('click', async () => {
+      if (vardiSettingToggling) {
+        return;
+      }
+      const next = !vardiGameEnabled;
+      vardiSettingToggling = true;
+      vardiSettingError = null;
+      render();
+      try {
+        const response = await fetch(`${API_BASE_URL}/settings`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${authToken}`,
+          },
+          body: JSON.stringify({ vardiGameEnabled: next }),
+        });
+        if (!response.ok) {
+          throw new Error('Failed to save');
+        }
+        const data = (await response.json()) as { vardiGameEnabled?: boolean };
+        vardiGameEnabled = Boolean(data.vardiGameEnabled);
+      } catch {
+        vardiSettingError = 'Neizdevās saglabāt iestatījumu.';
+      } finally {
+        vardiSettingToggling = false;
+        render();
+      }
     });
   }
 
