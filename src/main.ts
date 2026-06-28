@@ -79,7 +79,7 @@ type SelfieEntry = {
   createdAt: string;
 };
 
-type ProfileTab = 'profile' | 'selfie' | 'team-divider';
+type ProfileTab = 'profile' | 'selfie' | 'team-divider' | 'score';
 type TeamDividerDraftType = 'two' | 'six' | 'pairs';
 type TeamDividerDraft = {
   type: TeamDividerDraftType;
@@ -90,6 +90,7 @@ type AppSettingsResponse = {
   vardiGameEnabled?: boolean;
   teamDividerPeople?: string[];
   teamDividerSavedTeams?: string[][];
+  teamDividerScores?: Record<string, number>;
 };
 
 const GOOGLE_CLIENT_ID = '230576623376-0gdvkur7dt49lea75pq9am271r6scjdq.apps.googleusercontent.com';
@@ -204,6 +205,9 @@ const setCurrentUser = (user: UserProfile | null) => {
     teamDividerSaving = false;
     teamDividerError = null;
     teamDividerSuccess = null;
+    scoreSaving = false;
+    scoreError = null;
+    scoreSuccess = null;
   }
   render();
 };
@@ -257,6 +261,10 @@ let teamDividerDraft: TeamDividerDraft | null = null;
 let teamDividerSaving = false;
 let teamDividerError: string | null = null;
 let teamDividerSuccess: string | null = null;
+let teamDividerScores: Record<string, number> = {};
+let scoreSaving = false;
+let scoreError: string | null = null;
+let scoreSuccess: string | null = null;
 let navClickBound = false;
 const GAME_SIZE = 5;
 const EMOJI_THEMES: Record<string, string[]> = {
@@ -408,7 +416,7 @@ const getProfileDefaults = () => {
 
 const profileTabsNav = (activeTab: ProfileTab) => `
   <nav class="mt-5 grid w-full grid-cols-1 gap-2 text-[11px] sm:mt-6 ${
-    currentUser?.admin ? 'sm:grid-cols-3' : 'sm:grid-cols-2'
+    currentUser?.admin ? 'sm:grid-cols-4' : 'sm:grid-cols-2'
   } sm:gap-3 sm:text-sm">
     <button
       class="min-h-10 w-full rounded-2xl border px-3 py-2 text-center leading-tight transition sm:min-h-11 ${
@@ -444,6 +452,21 @@ const profileTabsNav = (activeTab: ProfileTab) => `
             type="button"
           >
             Komandu sadalītājs
+          </button>`
+        : ''
+    }
+    ${
+      currentUser?.admin
+        ? `<button
+            class="min-h-10 w-full rounded-2xl border px-3 py-2 text-center leading-tight transition sm:min-h-11 ${
+              activeTab === 'score'
+                ? 'border-white/30 bg-slate-900/80 text-white'
+                : 'border-white/10 bg-slate-950/30 text-slate-300 hover:border-white/30 hover:bg-slate-900/40'
+            }"
+            data-profile-tab="score"
+            type="button"
+          >
+            Score
           </button>`
         : ''
     }
@@ -695,6 +718,113 @@ const teamDividerPage = () => {
           ? `<p class="text-sm text-rose-300">${escapeHtml(teamDividerError)}</p>`
           : teamDividerSuccess
             ? `<p class="text-sm text-emerald-300">${escapeHtml(teamDividerSuccess)}</p>`
+            : ''
+      }
+    </div>
+  `;
+};
+
+const normalizeTeamDividerScores = (scores: Record<string, number>) =>
+  Object.entries(scores).reduce<Record<string, number>>((normalized, [name, score]) => {
+    const safeName = name.trim();
+    const safeScore = Number(score);
+    if (!safeName || !Number.isFinite(safeScore)) {
+      return normalized;
+    }
+    normalized[safeName] = Math.trunc(safeScore);
+    return normalized;
+  }, {});
+
+const scoreRows = () =>
+  teamDividerPeople
+    .map((name) => ({
+      name,
+      points: teamDividerScores[name] ?? 0,
+    }))
+    .sort((first, second) => {
+      if (second.points !== first.points) {
+        return second.points - first.points;
+      }
+      return first.name.localeCompare(second.name, 'lv-LV');
+    });
+
+const scorePage = () => {
+  if (!currentUser?.admin) {
+    return `
+      <div class="mt-8 rounded-2xl border border-white/10 bg-slate-950/40 p-6 text-center">
+        <p class="text-sm text-slate-400">Šī sadaļa pieejama tikai administratoram.</p>
+      </div>
+    `;
+  }
+
+  const rows = scoreRows();
+  return `
+    <div class="mt-8 grid gap-5">
+      <div class="rounded-2xl border border-white/5 bg-slate-950/40 p-5">
+        <div class="flex flex-col gap-1 sm:flex-row sm:items-end sm:justify-between">
+          <div>
+            <p class="text-xs uppercase tracking-[0.2em] text-slate-500">Score</p>
+            <p class="mt-2 text-sm text-slate-400">
+              Punkti tiek rādīti tikai cilvēkiem no Komandu sadalītāja saraksta.
+            </p>
+          </div>
+          <span class="text-xs uppercase tracking-[0.2em] text-slate-500">${rows.length} cilvēki</span>
+        </div>
+      </div>
+
+      ${
+        rows.length
+          ? `<ol class="grid gap-3">
+              ${rows
+                .map(
+                  (row, index) => `
+                    <li class="flex flex-col gap-3 rounded-2xl border border-white/10 bg-slate-950/40 p-4 sm:flex-row sm:items-center sm:justify-between">
+                      <div class="flex items-center gap-4">
+                        <span class="flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-white/10 bg-slate-900/70 text-sm text-slate-400">
+                          ${index + 1}
+                        </span>
+                        <div>
+                          <p class="text-base font-medium text-slate-100">${escapeHtml(row.name)}</p>
+                          <p class="mt-1 text-xs uppercase tracking-[0.2em] text-slate-500">${row.points} punkti</p>
+                        </div>
+                      </div>
+                      <div class="flex items-center gap-2">
+                        <button
+                          class="rounded-full border border-white/10 px-4 py-2 text-sm text-slate-200 transition hover:border-rose-300/60 hover:text-rose-200 disabled:cursor-not-allowed disabled:opacity-50"
+                          data-score-name="${escapeHtml(row.name)}"
+                          data-score-delta="-1"
+                          type="button"
+                          ${scoreSaving || row.points <= 0 ? 'disabled' : ''}
+                        >
+                          -1
+                        </button>
+                        <button
+                          class="rounded-full bg-slate-100 px-4 py-2 text-sm font-medium text-slate-900 transition hover:bg-white disabled:cursor-not-allowed disabled:opacity-60"
+                          data-score-name="${escapeHtml(row.name)}"
+                          data-score-delta="1"
+                          type="button"
+                          ${scoreSaving ? 'disabled' : ''}
+                        >
+                          +1
+                        </button>
+                      </div>
+                    </li>
+                  `,
+                )
+                .join('')}
+            </ol>`
+          : `<div class="rounded-2xl border border-white/10 bg-slate-950/40 p-6 text-center">
+              <p class="text-sm text-slate-400">
+                Pievieno cilvēkus sadaļā “Komandu sadalītājs”, lai šeit varētu skaitīt punktus.
+              </p>
+            </div>`
+      }
+
+      ${
+        scoreError
+          ? `<p class="text-sm text-rose-300">${escapeHtml(scoreError)}</p>`
+          : scoreSuccess
+            ? `<p class="text-sm text-emerald-300">${escapeHtml(scoreSuccess)}</p>`
             : ''
       }
     </div>
@@ -1158,6 +1288,14 @@ const profilePage = () => {
     return `
       ${header}
       ${teamDividerPage()}
+    </section>
+    `;
+  }
+
+  if (profileTab === 'score') {
+    return `
+      ${header}
+      ${scorePage()}
     </section>
     `;
   }
@@ -3776,12 +3914,14 @@ const applyAppSettings = (data: AppSettingsResponse) => {
   vardiGameEnabled = Boolean(data.vardiGameEnabled);
   teamDividerPeople = normalizeTeamDividerPeople(data.teamDividerPeople ?? []);
   teamDividerSavedTeams = normalizeTeamDividerTeams(data.teamDividerSavedTeams ?? []);
+  teamDividerScores = normalizeTeamDividerScores(data.teamDividerScores ?? {});
 };
 
 const saveAdminSettings = async (payload: {
   vardiGameEnabled?: boolean;
   teamDividerPeople?: string[];
   teamDividerSavedTeams?: string[][];
+  teamDividerScores?: Record<string, number>;
 }) => {
   if (!authToken) {
     throw new Error('Missing auth token');
@@ -3903,12 +4043,46 @@ function initTeamDivider() {
   });
 }
 
+function initScore() {
+  if (!currentUser?.admin) {
+    return;
+  }
+
+  document.querySelectorAll('[data-score-name]').forEach((button) => {
+    button.addEventListener('click', async () => {
+      const target = button as HTMLElement;
+      const name = target.dataset.scoreName;
+      const delta = Number(target.dataset.scoreDelta ?? 0);
+      if (!name || !Number.isFinite(delta) || scoreSaving) {
+        return;
+      }
+      const nextScores = {
+        ...teamDividerScores,
+        [name]: Math.max(0, (teamDividerScores[name] ?? 0) + delta),
+      };
+      scoreSaving = true;
+      scoreError = null;
+      scoreSuccess = null;
+      render();
+      try {
+        await saveAdminSettings({ teamDividerScores: nextScores });
+        scoreSuccess = 'Punkti saglabāti.';
+      } catch {
+        scoreError = 'Neizdevās saglabāt punktus.';
+      } finally {
+        scoreSaving = false;
+        render();
+      }
+    });
+  });
+}
+
 function initProfileForm() {
   const user = currentUser;
   if (!user) {
     return;
   }
-  if (profileTab === 'team-divider' && !user.admin) {
+  if ((profileTab === 'team-divider' || profileTab === 'score') && !user.admin) {
     profileTab = 'profile';
     render();
     return;
@@ -3920,7 +4094,7 @@ function initProfileForm() {
       if (!tab || tab === profileTab) {
         return;
       }
-      if (tab === 'team-divider' && !currentUser?.admin) {
+      if ((tab === 'team-divider' || tab === 'score') && !currentUser?.admin) {
         return;
       }
       profileTab = tab;
@@ -3935,6 +4109,8 @@ function initProfileForm() {
   if (profileTab !== 'profile') {
     if (profileTab === 'selfie') {
       initSelfieForm();
+    } else if (profileTab === 'score') {
+      initScore();
     } else {
       initTeamDivider();
     }
