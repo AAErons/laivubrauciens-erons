@@ -79,6 +79,19 @@ type SelfieEntry = {
   createdAt: string;
 };
 
+type ProfileTab = 'profile' | 'selfie' | 'team-divider';
+type TeamDividerDraftType = 'two' | 'six' | 'pairs';
+type TeamDividerDraft = {
+  type: TeamDividerDraftType;
+  teams: string[][];
+};
+
+type AppSettingsResponse = {
+  vardiGameEnabled?: boolean;
+  teamDividerPeople?: string[];
+  teamDividerSavedTeams?: string[][];
+};
+
 const GOOGLE_CLIENT_ID = '230576623376-0gdvkur7dt49lea75pq9am271r6scjdq.apps.googleusercontent.com';
 const API_BASE_URL = import.meta.env.DEV
   ? import.meta.env.VITE_API_BASE_URL_DEV ?? 'http://localhost:3001'
@@ -187,6 +200,10 @@ const setCurrentUser = (user: UserProfile | null) => {
     selfieAdminEntries = [];
     selfieAdminActionId = null;
     selfieAdminLightboxIndex = null;
+    teamDividerDraft = null;
+    teamDividerSaving = false;
+    teamDividerError = null;
+    teamDividerSuccess = null;
   }
   render();
 };
@@ -200,7 +217,7 @@ let profileError: string | null = null;
 let profileLoading = false;
 let profileUploading = false;
 let profileMode: 'view' | 'edit' = 'view';
-let profileTab: 'profile' | 'selfie' = 'profile';
+let profileTab: ProfileTab = 'profile';
 let selfieLoading = false;
 let selfieLoaded = false;
 let selfieSubmitting = false;
@@ -234,6 +251,12 @@ let vardiResultsLoaded = false;
 let vardiGameEnabled = false;
 let vardiSettingToggling = false;
 let vardiSettingError: string | null = null;
+let teamDividerPeople: string[] = [];
+let teamDividerSavedTeams: string[][] = [];
+let teamDividerDraft: TeamDividerDraft | null = null;
+let teamDividerSaving = false;
+let teamDividerError: string | null = null;
+let teamDividerSuccess: string | null = null;
 let navClickBound = false;
 const GAME_SIZE = 5;
 const EMOJI_THEMES: Record<string, string[]> = {
@@ -383,8 +406,10 @@ const getProfileDefaults = () => {
   };
 };
 
-const profileTabsNav = (activeTab: 'profile' | 'selfie') => `
-  <nav class="mt-5 grid w-full grid-cols-1 gap-2 text-[11px] sm:mt-6 sm:grid-cols-2 sm:gap-3 sm:text-sm">
+const profileTabsNav = (activeTab: ProfileTab) => `
+  <nav class="mt-5 grid w-full grid-cols-1 gap-2 text-[11px] sm:mt-6 ${
+    currentUser?.admin ? 'sm:grid-cols-3' : 'sm:grid-cols-2'
+  } sm:gap-3 sm:text-sm">
     <button
       class="min-h-10 w-full rounded-2xl border px-3 py-2 text-center leading-tight transition sm:min-h-11 ${
         activeTab === 'profile'
@@ -407,6 +432,21 @@ const profileTabsNav = (activeTab: 'profile' | 'selfie') => `
     >
       Aktivitātes izaicinājums
     </button>
+    ${
+      currentUser?.admin
+        ? `<button
+            class="min-h-10 w-full rounded-2xl border px-3 py-2 text-center leading-tight transition sm:min-h-11 ${
+              activeTab === 'team-divider'
+                ? 'border-white/30 bg-slate-900/80 text-white'
+                : 'border-white/10 bg-slate-950/30 text-slate-300 hover:border-white/30 hover:bg-slate-900/40'
+            }"
+            data-profile-tab="team-divider"
+            type="button"
+          >
+            Komandu sadalītājs
+          </button>`
+        : ''
+    }
   </nav>
 `;
 
@@ -434,6 +474,232 @@ const getModerationMeta = (status?: 'pending' | 'approved' | 'rejected') => {
 };
 
 const canEditSelfieEntry = (entry?: SelfieEntry | null) => entry?.moderationStatus !== 'approved';
+
+const normalizeTeamDividerPeople = (people: string[]) => {
+  const seen = new Set<string>();
+  return people
+    .map((name) => name.trim())
+    .filter(Boolean)
+    .filter((name) => {
+      const key = name.toLocaleLowerCase('lv-LV');
+      if (seen.has(key)) {
+        return false;
+      }
+      seen.add(key);
+      return true;
+    });
+};
+
+const normalizeTeamDividerTeams = (teams: string[][]) =>
+  teams
+    .filter(Array.isArray)
+    .map((team) => normalizeTeamDividerPeople(team))
+    .filter((team) => team.length > 0);
+
+const shuffleTeamDividerPeople = (people: string[]) => {
+  const shuffled = [...people];
+  for (let index = shuffled.length - 1; index > 0; index -= 1) {
+    const nextIndex = Math.floor(Math.random() * (index + 1));
+    [shuffled[index], shuffled[nextIndex]] = [shuffled[nextIndex], shuffled[index]];
+  }
+  return shuffled;
+};
+
+const draftFixedTeamCount = (teamCount: number): string[][] => {
+  const teams = Array.from({ length: teamCount }, () => [] as string[]);
+  shuffleTeamDividerPeople(teamDividerPeople).forEach((name, index) => {
+    teams[index % teamCount].push(name);
+  });
+  return teams;
+};
+
+const draftPairs = (): string[][] => {
+  const shuffled = shuffleTeamDividerPeople(teamDividerPeople);
+  const teams: string[][] = [];
+  if (shuffled.length % 2 === 1 && shuffled.length >= 3) {
+    teams.push(shuffled.splice(0, 3));
+  }
+  while (shuffled.length > 0) {
+    teams.push(shuffled.splice(0, 2));
+  }
+  return teams;
+};
+
+const teamDividerTypeLabel = (type: TeamDividerDraftType) => {
+  if (type === 'two') {
+    return '2 komandas';
+  }
+  if (type === 'six') {
+    return '6 komandas';
+  }
+  return 'Pāri';
+};
+
+const teamDividerTeamsHtml = (teams: string[][]) => `
+  <div class="grid gap-3 sm:grid-cols-2">
+    ${teams
+      .map(
+        (team, index) => `
+          <div class="rounded-2xl border border-white/10 bg-slate-950/40 p-4">
+            <p class="text-xs uppercase tracking-[0.2em] text-slate-500">Komanda ${index + 1}</p>
+            <div class="mt-3 flex flex-wrap gap-2">
+              ${
+                team.length
+                  ? team
+                      .map(
+                        (name) => `
+                          <span class="rounded-full border border-white/10 bg-slate-900/70 px-3 py-1 text-sm text-slate-100">
+                            ${escapeHtml(name)}
+                          </span>
+                        `,
+                      )
+                      .join('')
+                  : '<span class="text-sm text-slate-500">Nav dalībnieku</span>'
+              }
+            </div>
+          </div>
+        `,
+      )
+      .join('')}
+  </div>
+`;
+
+const teamDividerPage = () => {
+  if (!currentUser?.admin) {
+    return `
+      <div class="mt-8 rounded-2xl border border-white/10 bg-slate-950/40 p-6 text-center">
+        <p class="text-sm text-slate-400">Šī sadaļa pieejama tikai administratoram.</p>
+      </div>
+    `;
+  }
+
+  const hasPeople = teamDividerPeople.length > 0;
+  const canDraftTwo = teamDividerPeople.length >= 2;
+  const canDraftSix = teamDividerPeople.length >= 6;
+  const canDraftPairs = teamDividerPeople.length >= 2;
+  const visibleTeams = teamDividerDraft?.teams ?? teamDividerSavedTeams;
+
+  return `
+    <div class="mt-8 grid gap-6">
+      <div class="rounded-2xl border border-white/5 bg-slate-950/40 p-5">
+        <p class="text-xs uppercase tracking-[0.2em] text-slate-500">Dalībnieki</p>
+        <div class="mt-4 flex flex-col gap-3 sm:flex-row">
+          <input
+            class="min-w-0 flex-1 rounded-2xl border border-slate-700/70 bg-slate-950/70 px-4 py-3 text-sm text-slate-200 placeholder:text-slate-600 focus:border-slate-500 focus:outline-none"
+            id="team-divider-name"
+            type="text"
+            placeholder="Pievienot vārdu"
+            ${teamDividerSaving ? 'disabled' : ''}
+          />
+          <button
+            class="rounded-full bg-slate-100 px-5 py-2 text-sm font-medium text-slate-900 transition hover:bg-white disabled:cursor-not-allowed disabled:opacity-60"
+            id="team-divider-add"
+            type="button"
+            ${teamDividerSaving ? 'disabled' : ''}
+          >
+            Pievienot
+          </button>
+        </div>
+        <div class="mt-4 flex flex-wrap gap-2">
+          ${
+            hasPeople
+              ? teamDividerPeople
+                  .map(
+                    (name) => `
+                      <span class="inline-flex items-center gap-2 rounded-full border border-white/10 bg-slate-900/70 py-1 pl-3 pr-1 text-sm text-slate-100">
+                        ${escapeHtml(name)}
+                        <button
+                          class="rounded-full border border-white/10 px-2 py-0.5 text-xs text-slate-300 transition hover:border-rose-300/60 hover:text-rose-200 disabled:cursor-not-allowed disabled:opacity-60"
+                          data-team-divider-remove="${escapeHtml(name)}"
+                          type="button"
+                          ${teamDividerSaving ? 'disabled' : ''}
+                        >
+                          Noņemt
+                        </button>
+                      </span>
+                    `,
+                  )
+                  .join('')
+              : '<p class="text-sm text-slate-500">Pagaidām nav pievienots neviens dalībnieks.</p>'
+          }
+        </div>
+      </div>
+
+      <div class="rounded-2xl border border-white/5 bg-slate-950/40 p-5">
+        <p class="text-xs uppercase tracking-[0.2em] text-slate-500">Ģenerēt komandas</p>
+        <div class="mt-4 flex flex-wrap gap-3">
+          <button
+            class="rounded-full border border-slate-700/70 px-5 py-2 text-sm text-slate-100 transition hover:border-slate-500 disabled:cursor-not-allowed disabled:opacity-50"
+            data-team-divider-draft="two"
+            type="button"
+            ${!canDraftTwo || teamDividerSaving ? 'disabled' : ''}
+          >
+            Draft two teams
+          </button>
+          <button
+            class="rounded-full border border-slate-700/70 px-5 py-2 text-sm text-slate-100 transition hover:border-slate-500 disabled:cursor-not-allowed disabled:opacity-50"
+            data-team-divider-draft="six"
+            type="button"
+            ${!canDraftSix || teamDividerSaving ? 'disabled' : ''}
+          >
+            Draft 6 teams
+          </button>
+          <button
+            class="rounded-full border border-slate-700/70 px-5 py-2 text-sm text-slate-100 transition hover:border-slate-500 disabled:cursor-not-allowed disabled:opacity-50"
+            data-team-divider-draft="pairs"
+            type="button"
+            ${!canDraftPairs || teamDividerSaving ? 'disabled' : ''}
+          >
+            Draft pairs
+          </button>
+        </div>
+        <p class="mt-3 text-xs text-slate-500">
+          Ģenerētais sadalījums netiek saglabāts, kamēr nenospied “Saglabāt sadalījumu”.
+        </p>
+      </div>
+
+      ${
+        visibleTeams.length
+          ? `<div class="rounded-2xl border border-white/5 bg-slate-950/40 p-5">
+              <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                <div>
+                  <p class="text-xs uppercase tracking-[0.2em] text-slate-500">
+                    ${teamDividerDraft ? 'Jauns sadalījums' : 'Saglabātais sadalījums'}
+                  </p>
+                  ${
+                    teamDividerDraft
+                      ? `<p class="mt-1 text-sm text-slate-300">${teamDividerTypeLabel(teamDividerDraft.type)}</p>`
+                      : ''
+                  }
+                </div>
+                ${
+                  teamDividerDraft
+                    ? `<button
+                        class="rounded-full bg-emerald-200 px-5 py-2 text-sm font-medium text-emerald-950 transition hover:bg-emerald-100 disabled:cursor-not-allowed disabled:opacity-60"
+                        id="team-divider-save-teams"
+                        type="button"
+                        ${teamDividerSaving ? 'disabled' : ''}
+                      >
+                        ${teamDividerSaving ? 'Saglabājam...' : 'Saglabāt sadalījumu'}
+                      </button>`
+                    : ''
+                }
+              </div>
+              <div class="mt-4">${teamDividerTeamsHtml(visibleTeams)}</div>
+            </div>`
+          : ''
+      }
+
+      ${
+        teamDividerError
+          ? `<p class="text-sm text-rose-300">${escapeHtml(teamDividerError)}</p>`
+          : teamDividerSuccess
+            ? `<p class="text-sm text-emerald-300">${escapeHtml(teamDividerSuccess)}</p>`
+            : ''
+      }
+    </div>
+  `;
+};
 
 const activitiesPublicPage = () => `
   <section class="rounded-3xl border border-white/5 bg-white/5 p-5 sm:p-8">
@@ -884,6 +1150,14 @@ const profilePage = () => {
     return `
       ${header}
       ${selfieChallengePage()}
+    </section>
+    `;
+  }
+
+  if (profileTab === 'team-divider') {
+    return `
+      ${header}
+      ${teamDividerPage()}
     </section>
     `;
   }
@@ -2981,10 +3255,10 @@ const render = () => {
 
 const loadAppSettings = () => {
   fetch(`${API_BASE_URL}/settings`, { cache: 'no-store' })
-    .then(async (response) => (response.ok ? ((await response.json()) as { vardiGameEnabled?: boolean }) : null))
+    .then(async (response) => (response.ok ? ((await response.json()) as AppSettingsResponse) : null))
     .then((data) => {
       if (data) {
-        vardiGameEnabled = Boolean(data.vardiGameEnabled);
+        applyAppSettings(data);
         render();
       }
     })
@@ -3498,20 +3772,159 @@ function initSelfieForm() {
   loadTodayEntry();
 }
 
+const applyAppSettings = (data: AppSettingsResponse) => {
+  vardiGameEnabled = Boolean(data.vardiGameEnabled);
+  teamDividerPeople = normalizeTeamDividerPeople(data.teamDividerPeople ?? []);
+  teamDividerSavedTeams = normalizeTeamDividerTeams(data.teamDividerSavedTeams ?? []);
+};
+
+const saveAdminSettings = async (payload: {
+  vardiGameEnabled?: boolean;
+  teamDividerPeople?: string[];
+  teamDividerSavedTeams?: string[][];
+}) => {
+  if (!authToken) {
+    throw new Error('Missing auth token');
+  }
+  const response = await fetch(`${API_BASE_URL}/settings`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${authToken}`,
+    },
+    body: JSON.stringify(payload),
+  });
+  if (!response.ok) {
+    throw new Error('Failed to save settings');
+  }
+  const data = (await response.json()) as AppSettingsResponse;
+  applyAppSettings(data);
+  return data;
+};
+
+function initTeamDivider() {
+  if (!currentUser?.admin) {
+    return;
+  }
+
+  const nameInput = document.getElementById('team-divider-name') as HTMLInputElement | null;
+  const addButton = document.getElementById('team-divider-add');
+  const saveTeamsButton = document.getElementById('team-divider-save-teams');
+
+  const savePeople = async (nextPeople: string[]) => {
+    teamDividerSaving = true;
+    teamDividerError = null;
+    teamDividerSuccess = null;
+    render();
+    try {
+      await saveAdminSettings({ teamDividerPeople: nextPeople });
+      teamDividerDraft = null;
+      teamDividerSuccess = 'Dalībnieku saraksts saglabāts.';
+    } catch {
+      teamDividerError = 'Neizdevās saglabāt dalībnieku sarakstu.';
+    } finally {
+      teamDividerSaving = false;
+      render();
+    }
+  };
+
+  const addName = () => {
+    const name = nameInput?.value.trim() ?? '';
+    if (!name || teamDividerSaving) {
+      return;
+    }
+    const exists = teamDividerPeople.some((person) => person.toLocaleLowerCase('lv-LV') === name.toLocaleLowerCase('lv-LV'));
+    if (exists) {
+      teamDividerError = 'Šis vārds jau ir sarakstā.';
+      teamDividerSuccess = null;
+      render();
+      return;
+    }
+    savePeople([...teamDividerPeople, name]);
+  };
+
+  addButton?.addEventListener('click', addName);
+  nameInput?.addEventListener('keydown', (event) => {
+    if (event.key === 'Enter') {
+      event.preventDefault();
+      addName();
+    }
+  });
+
+  document.querySelectorAll('[data-team-divider-remove]').forEach((button) => {
+    button.addEventListener('click', () => {
+      const name = (button as HTMLElement).dataset.teamDividerRemove;
+      if (!name || teamDividerSaving) {
+        return;
+      }
+      savePeople(teamDividerPeople.filter((person) => person !== name));
+    });
+  });
+
+  document.querySelectorAll('[data-team-divider-draft]').forEach((button) => {
+    button.addEventListener('click', () => {
+      const type = (button as HTMLElement).dataset.teamDividerDraft as TeamDividerDraftType | undefined;
+      if (!type || teamDividerSaving) {
+        return;
+      }
+      if (type === 'two' && teamDividerPeople.length >= 2) {
+        teamDividerDraft = { type, teams: draftFixedTeamCount(2) };
+      } else if (type === 'six' && teamDividerPeople.length >= 6) {
+        teamDividerDraft = { type, teams: draftFixedTeamCount(6) };
+      } else if (type === 'pairs' && teamDividerPeople.length >= 2) {
+        teamDividerDraft = { type, teams: draftPairs() };
+      } else {
+        return;
+      }
+      teamDividerError = null;
+      teamDividerSuccess = null;
+      render();
+    });
+  });
+
+  saveTeamsButton?.addEventListener('click', async () => {
+    if (!teamDividerDraft || teamDividerSaving) {
+      return;
+    }
+    teamDividerSaving = true;
+    teamDividerError = null;
+    teamDividerSuccess = null;
+    render();
+    try {
+      await saveAdminSettings({ teamDividerSavedTeams: teamDividerDraft.teams });
+      teamDividerDraft = null;
+      teamDividerSuccess = 'Komandu sadalījums saglabāts.';
+    } catch {
+      teamDividerError = 'Neizdevās saglabāt komandu sadalījumu.';
+    } finally {
+      teamDividerSaving = false;
+      render();
+    }
+  });
+}
+
 function initProfileForm() {
   const user = currentUser;
   if (!user) {
     return;
   }
+  if (profileTab === 'team-divider' && !user.admin) {
+    profileTab = 'profile';
+    render();
+    return;
+  }
 
   document.querySelectorAll('[data-profile-tab]').forEach((button) => {
     button.addEventListener('click', () => {
-      const tab = (button as HTMLElement).dataset.profileTab as 'profile' | 'selfie' | undefined;
+      const tab = (button as HTMLElement).dataset.profileTab as ProfileTab | undefined;
       if (!tab || tab === profileTab) {
         return;
       }
+      if (tab === 'team-divider' && !currentUser?.admin) {
+        return;
+      }
       profileTab = tab;
-      if (tab === 'selfie') {
+      if (tab !== 'profile') {
         profileMode = 'view';
         profileError = null;
       }
@@ -3520,7 +3933,11 @@ function initProfileForm() {
   });
 
   if (profileTab !== 'profile') {
-    initSelfieForm();
+    if (profileTab === 'selfie') {
+      initSelfieForm();
+    } else {
+      initTeamDivider();
+    }
     return;
   }
 
@@ -3544,19 +3961,7 @@ function initProfileForm() {
       vardiSettingError = null;
       render();
       try {
-        const response = await fetch(`${API_BASE_URL}/settings`, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            Authorization: `Bearer ${authToken}`,
-          },
-          body: JSON.stringify({ vardiGameEnabled: next }),
-        });
-        if (!response.ok) {
-          throw new Error('Failed to save');
-        }
-        const data = (await response.json()) as { vardiGameEnabled?: boolean };
-        vardiGameEnabled = Boolean(data.vardiGameEnabled);
+        await saveAdminSettings({ vardiGameEnabled: next });
       } catch {
         vardiSettingError = 'Neizdevās saglabāt iestatījumu.';
       } finally {
