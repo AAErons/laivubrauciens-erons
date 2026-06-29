@@ -768,7 +768,17 @@ const scorePage = () => {
               Punkti tiek rādīti tikai cilvēkiem no Komandu sadalītāja saraksta.
             </p>
           </div>
-          <span class="text-xs uppercase tracking-[0.2em] text-slate-500">${rows.length} cilvēki</span>
+          <div class="flex flex-wrap items-center gap-3">
+            <button
+              class="rounded-full border border-rose-300/40 px-4 py-2 text-sm text-rose-200 transition hover:border-rose-200 hover:text-rose-100 disabled:cursor-not-allowed disabled:opacity-50"
+              id="score-reset"
+              type="button"
+              ${scoreSaving || !Object.keys(teamDividerScores).length ? 'disabled' : ''}
+            >
+              Reset scores
+            </button>
+            <span class="text-xs uppercase tracking-[0.2em] text-slate-500">${rows.length} cilvēki</span>
+          </div>
         </div>
       </div>
 
@@ -4047,6 +4057,30 @@ function initScore() {
   if (!currentUser?.admin) {
     return;
   }
+
+  const resetButton = document.getElementById('score-reset');
+  resetButton?.addEventListener('click', async () => {
+    if (scoreSaving) {
+      return;
+    }
+    const confirmed = window.confirm('Do you really want to clear the scores?');
+    if (!confirmed) {
+      return;
+    }
+    scoreSaving = true;
+    scoreError = null;
+    scoreSuccess = null;
+    render();
+    try {
+      await saveAdminSettings({ teamDividerScores: {} });
+      scoreSuccess = 'Punkti notīrīti.';
+    } catch {
+      scoreError = 'Neizdevās notīrīt punktus.';
+    } finally {
+      scoreSaving = false;
+      render();
+    }
+  });
 
   document.querySelectorAll('[data-score-name]').forEach((button) => {
     button.addEventListener('click', async () => {
